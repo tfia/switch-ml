@@ -31,17 +31,17 @@ control SwitchIngress(
             ig_tm_md.ucast_egress_port = egress_port;
         }
 
-        action ai_select1(bit<14> feature_val_1){
-            ig_md.action_select1 = feature_val_1 ;
+        action ai_select_1(bit<14> feature_val_1){
+            ig_md.action_select_1 = feature_val_1 ;
 
         }
 
-        action ai_select2(bit<14> feature_val_2){
-            ig_md.action_select2 = feature_val_2 ;
+        action ai_select_2(bit<14> feature_val_2){
+            ig_md.action_select_2 = feature_val_2 ;
         }
 
-        action ai_select3(bit<14> feature_val_3){
-            ig_md.action_select3 = feature_val_3;
+        action ai_select_3(bit<14> feature_val_3){
+            ig_md.action_select_3 = feature_val_3;
         }
 
         table ti_feature_1 {
@@ -50,7 +50,7 @@ control SwitchIngress(
             }
             actions = {
                 NoAction;
-                ai_select1;
+                ai_select_1;
             }
             size = 1024;
         }
@@ -61,7 +61,7 @@ control SwitchIngress(
             }
             actions = {
                 NoAction;
-                ai_select2;
+                ai_select_2;
             }
             size = 1024;
         }
@@ -72,16 +72,16 @@ control SwitchIngress(
             }
             actions = {
                 NoAction;
-                ai_select3;
+                ai_select_3;
             }
             size = 1024;
         }
 
         table ti_ipv4_forward {
             key = {
-                ig_md.action_select1: range;
-                ig_md.action_select2: range;
-                ig_md.action_select3: range;
+                ig_md.action_select_1: range;
+                ig_md.action_select_2: range;
+                ig_md.action_select_3: range;
             }
             actions = {
                 ai_ipv4_forward;
@@ -99,8 +99,8 @@ control SwitchIngress(
                     ti_feature_2.apply();
                     ti_feature_3.apply();
                 } else { // not TCP, feature 2 and 3 not valid
-                    ig_md.action_select2 = 1;
-                    ig_md.action_select3 = 1;
+                    ig_md.action_select_2 = 1;
+                    ig_md.action_select_3 = 1;
                 }
                 ti_ipv4_forward.apply();
             }

@@ -85,9 +85,9 @@ struct header_t {
 }
 
 struct metadata_t {
-    bit<14> action_select1;
-    bit<14> action_select2;
-    bit<14> action_select3;
+    bit<14> action_select_1;
+    bit<14> action_select_2;
+    bit<14> action_select_3;
 }
 struct egress_metadata_t{
     ipv4_addr_t port_ip;
