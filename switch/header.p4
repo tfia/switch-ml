@@ -8,7 +8,6 @@ typedef bit<32> ipv4_addr_t;
 typedef bit<9>   portid_t;       
 const ether_type_t ETHERTYPE_IPV4 = 16w0x0800;
 const ether_type_t ETHERTYPE_ARP = 16w0x0806;
-const ether_type_t ETHERTYPE_UPLOAD = 16w0x0866;
 
 const ip_protocol_t IP_PROTOCOLS_ICMP = 1;
 const ip_protocol_t IP_PROTOCOLS_TCP = 6;
@@ -76,12 +75,6 @@ header tcp_h {
     bit<16> urgent_ptr;
 }
 
-header upload_h {
-    mac_addr_t arp_mac;
-    ipv4_addr_t src_ip;
-    ipv4_addr_t dst_ip;
-}
-
 struct header_t {
     ethernet_h ethernet;
     ipv4_h ipv4;
@@ -89,14 +82,12 @@ struct header_t {
     tcp_h tcp;
     udp_h udp;
     icmp_h     icmp;
-    // Add more headers here.
-    upload_h upload;
 }
 
 struct metadata_t {
-    ipv4_addr_t port_ip;
-    mac_addr_t port_mac;
-    // Add metadata fields here.
+    bit<14> action_select1;
+    bit<14> action_select2;
+    bit<14> action_select3;
 }
 struct egress_metadata_t{
     ipv4_addr_t port_ip;

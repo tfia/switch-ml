@@ -121,7 +121,24 @@ control SwitchEgressDeparser(
         inout header_t hdr,
         in egress_metadata_t eg_md,
         in egress_intrinsic_metadata_for_deparser_t eg_intr_dprsr_md) {
+    // I don't think we need to recalculate IPv4 checksum here,
+    // since we are not modifying the packet.
+    // However the paper did this, so we follow it.
+    // We can test the performance difference later...
+    Checksum() ipv4_csum;
     apply {
+        if (hdr.ipv4.isValid()) {
+            hdr.ipv4.checksum = ipv4_csum.update({
+                hdr.ipv4.version, hdr.ipv4.ihl, hdr.ipv4.diffserv,
+                hdr.ipv4.total_len,
+                hdr.ipv4.identification,
+                hdr.ipv4.flags, hdr.ipv4.frag_offset,
+                hdr.ipv4.ttl, hdr.ipv4.protocol,
+                /* skip hdr.ipv4.hdr_checksum, */
+                hdr.ipv4.src_ip,
+                hdr.ipv4.dst_ip
+            });
+        }
         pkt.emit(hdr);
     }
 }

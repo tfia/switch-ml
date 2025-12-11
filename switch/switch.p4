@@ -21,40 +21,88 @@ control SwitchIngress(
             ig_dprsr_md.drop_ctl = 0x1; // Drop packet.
         }
 
-        action upload() {
-            ig_tm_md.ucast_egress_port = 64;
-        }
-
         action ai_forward(portid_t egress_port){
             ig_tm_md.ucast_egress_port = egress_port;
         }
 
-        table ti_forward{
+        action ai_ipv4_forward(mac_addr_t dst_mac, portid_t egress_port){
+            hdr.ethernet.src_mac = hdr.ethernet.dst_mac;
+            hdr.ethernet.dst_mac = dst_mac;
+            ig_tm_md.ucast_egress_port = egress_port;
+        }
+
+        action ai_select1(bit<14> feature_val_1){
+            ig_md.action_select1 = feature_val_1 ;
+
+        }
+
+        action ai_select2(bit<14> feature_val_2){
+            ig_md.action_select2 = feature_val_2 ;
+        }
+
+        action ai_select3(bit<14> feature_val_3){
+            ig_md.action_select3 = feature_val_3;
+        }
+
+        table ti_feature_1 {
             key = {
-                ig_intr_md.ingress_port: exact;
+                hdr.ipv4.protocol: range;
             }
             actions = {
-                ai_forward;
+                NoAction;
+                ai_select1;
+            }
+            size = 1024;
+        }
+
+        table ti_feature_2 {
+            key = {
+                hdr.tcp.src_port: range;
+            }
+            actions = {
+                NoAction;
+                ai_select2;
+            }
+            size = 1024;
+        }
+
+        table ti_feature_3 {
+            key = {
+                hdr.tcp.dst_port: range;
+            }
+            actions = {
+                NoAction;
+                ai_select3;
+            }
+            size = 1024;
+        }
+
+        table ti_ipv4_forward {
+            key = {
+                ig_md.action_select1: range;
+                ig_md.action_select2: range;
+                ig_md.action_select3: range;
+            }
+            actions = {
+                ai_ipv4_forward;
                 ai_drop;
+                NoAction;
             }
             size = 1024;
             default_action = ai_drop;
         }
 
         apply {
-            ti_forward.apply();
             if (hdr.ipv4.isValid()) {
-                if (hdr.tcp.isValid()) {
-                    ig_tm_md.ucast_egress_port = 64;
-                    hdr.tcp.setInvalid();
-                    hdr.ipv4.setInvalid();
-                    hdr.upload.setValid();
-                    hdr.upload.arp_mac = hdr.ethernet.src_mac;
-                    hdr.upload.src_ip = hdr.ipv4.src_ip;
-                    hdr.upload.dst_ip = hdr.ipv4.dst_ip;
-                    hdr.ethernet.ether_type = 16w0x0866;
-                    ig_tm_md.bypass_egress = 1;
+                ti_feature_1.apply();
+                if (hdr.ipv4.protocol == IP_PROTOCOLS_TCP) {
+                    ti_feature_2.apply();
+                    ti_feature_3.apply();
+                } else { // not TCP, feature 2 and 3 not valid
+                    ig_md.action_select2 = 1;
+                    ig_md.action_select3 = 1;
                 }
+                ti_ipv4_forward.apply();
             }
         }
 }
@@ -66,9 +114,7 @@ control SwitchEgress(
     in egress_intrinsic_metadata_from_parser_t eg_intr_prsr_md,
     inout egress_intrinsic_metadata_for_deparser_t eg_intr_dprsr_md,
     inout egress_intrinsic_metadata_for_output_port_t eg_intr_oport_md) {
-    apply {
-        /* Egress 不做任何处理 */
-    }
+    apply { }
 }
 
 Pipeline(SwitchIngressParser(),
