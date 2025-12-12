@@ -17,6 +17,12 @@ control SwitchIngress(
         inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
         inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
 
+        action ai_set_default_features() {
+            ig_md.action_select_1 = 0;
+            ig_md.action_select_2 = 0;
+            ig_md.action_select_3 = 0;
+        }
+
         action ai_drop() {
             ig_dprsr_md.drop_ctl = 0x1; // Drop packet.
         }
@@ -79,9 +85,9 @@ control SwitchIngress(
 
         table ti_ipv4_forward {
             key = {
-                ig_md.action_select_1: range;
-                ig_md.action_select_2: range;
-                ig_md.action_select_3: range;
+                ig_md.action_select_1: exact;
+                ig_md.action_select_2: exact;
+                ig_md.action_select_3: exact;
             }
             actions = {
                 ai_ipv4_forward;
@@ -94,8 +100,10 @@ control SwitchIngress(
 
         apply {
             if (hdr.ipv4.isValid()) {
+                ai_set_default_features();
+                
                 ti_feature_1.apply();
-                if (hdr.ipv4.protocol == IP_PROTOCOLS_TCP) {
+                if (hdr.ipv4.protocol == IP_PROTOCOLS_TCP && hdr.tcp.isValid()) {
                     ti_feature_2.apply();
                     ti_feature_3.apply();
                 } else { // not TCP, feature 2 and 3 not valid
