@@ -1,7 +1,27 @@
 #include <stdio.h>
 #include "headers.h"
 #include "switch_config.h"
+#include "utils.h"
 #include <stdlib.h>
+
+
+typedef enum {
+    ACTION_DROP = 0,
+    ACTION_FORWARD = 1
+} action_type_t;
+
+// For "when...then..." decision rules
+// -1 for Don't Care
+typedef struct {
+    int f1_id_start; int f1_id_end; // ID range
+    int f2_id_start; int f2_id_end;
+    int f3_id_start; int f3_id_end;
+    action_type_t type;
+    int egress_port; // Dismiss if type == ACTION_DROP
+    uint8_t dst_mac[6];
+} decision_rule_t;
+
+
 static void port_setup(const bf_rt_target_t *dev_tgt,
                        const switch_port_t *port_list,
                        const uint8_t port_count)
@@ -75,49 +95,6 @@ static void bfrt_setup(const bf_rt_target_t *dev_tgt,
     //	return bf_status;
 }
 
-void print_upload_h(upload_h *upload)
-{
-    printf("upload_h:\n");
-    // printf("type: %d\n", upload->type);
-    uint32_t src_ip = ntohl(upload->src_ip);
-    uint32_t dst_ip = ntohl(upload->dst_ip);
-    printf("mac: %02x:%02x:%02x:%02x:%02x:%02x\n", upload->mac.addr[0], upload->mac.addr[1], upload->mac.addr[2], upload->mac.addr[3], upload->mac.addr[4], upload->mac.addr[5]);
-    printf("src_ip: %d.%d.%d.%d\n", (src_ip >> 24) & 0xFF, (src_ip >> 16) & 0xFF, (src_ip >> 8) & 0xFF, src_ip & 0xFF);
-    printf("dst_ip: %d.%d.%d.%d\n", (dst_ip >> 24) & 0xFF, (dst_ip >> 16) & 0xFF, (dst_ip >> 8) & 0xFF, dst_ip & 0xFF);
-}
-
-int process_packet_from_p4(p4_channel_t *channel, upload_h *upload)
-{
-    int rx_len = 0;
-
-    /* Header structures */
-    rx_len = recvfrom(channel->sockfd, channel->recvbuf,
-                      PKTBUF_SIZE, 0, 0, 0);
-    if (rx_len < 0)
-    {
-        printf("Recv failed\n");
-        return -1;
-    }
-
-    if (rx_len == 0)
-    {
-        // printf("Recv zero\n");
-        return 0;
-    }
-
-    struct ethhdr *eth_h = (struct ethhdr *)channel->recvbuf;
-
-    if (ntohs(eth_h->h_proto) == ETHER_TYPE_UPLOAD)
-    { // check polling header
-        memcpy(upload, (upload_h *)((char *)eth_h + sizeof(struct ethhdr)), sizeof(upload_h));
-        return rx_len - sizeof(struct ethhdr);
-    } else {
-        // printf("Received non-uploading packet, proto: 0x%04x\n", ntohs(eth_h->h_proto));
-        return 0;
-    }
-    return 0;
-}
-
 int create_p4_channel(p4_channel_t *channel)
 {
     struct ifreq cpuif_req;
@@ -156,10 +133,131 @@ int create_p4_channel(p4_channel_t *channel)
     return 0;
 }
 
+/**
+ * @brief Programs the feature discretization table (e.g., ti_feature_1, ti_feature_2).
+ *
+ * @param session       BFRT session handle.
+ * @param dev_tgt       Device target.
+ * @param table_hdl     Handle of the feature table to program.
+ * @param key_field_name Name of the key field (e.g., "hdr.tcp.src_port").
+ * @param action_name   Name of the action to take (e.g., "SwitchIngress.ai_select_2").
+ * @param param_name    Name of the action parameter (e.g., "feature_val_2").
+ * @param thresholds    Array of threshold values that define the ranges.
+ * @param num_thresholds Number of thresholds in the array.
+ */
+void program_feature_table(bf_rt_session_hdl **session,
+                           bf_rt_target_t *dev_tgt,
+                           bf_rt_table_hdl *table_hdl,
+                           const char *key_field_name,
+                           const char *action_name,
+                           const char *param_name,
+                           const uint64_t thresholds[],
+                           int num_thresholds) {
+    bf_status_t bf_status;
+    bf_rt_table_key_hdl *key;
+    bf_rt_table_data_hdl *data;
+    bf_rt_id_t key_id, action_id, param_id;
+
+    P4_CHECK(bf_rt_table_key_allocate(table_hdl, &key));
+    P4_CHECK(bf_rt_table_data_allocate(table_hdl, &data));
+
+    P4_CHECK(bf_rt_key_field_id_get(table_hdl, key_field_name, &key_id));
+    P4_CHECK(bf_rt_action_name_to_id(table_hdl, action_name, &action_id));
+    P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, param_name, action_id, &param_id));
+
+    uint64_t low_bound = 0;
+    // For each threshold, create a range and program an entry
+    for (int i = 0; i < num_thresholds; i++) {
+        uint64_t high_bound = thresholds[i];
+        if (low_bound > high_bound) continue;
+
+        P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
+        P4_CHECK(bf_rt_key_field_set_value_range(key, key_id, low_bound, high_bound));
+
+        // Discretized feature value is the index of the threshold
+        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
+        P4_CHECK(bf_rt_data_field_set_value(data, param_id, i)); // Use index (ID) as feature value
+
+        P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
+        low_bound = high_bound + 1;
+    }
+    
+    P4_CHECK(bf_rt_table_key_deallocate(key));
+    P4_CHECK(bf_rt_table_data_deallocate(data));
+    P4_CHECK(bf_rt_session_complete_operations(*session));
+    printf("Programmed feature table for key '%s'\n", key_field_name);
+}
+
+/**
+ * @brief Programs the forwarding decision table based on provided rules.
+ *
+ * @param session       BFRT session handle.
+ * @param dev_tgt       Device target.
+ * @param table_hdl     Handle of the feature table to program.
+ * @param rules         Array of decision rules.
+ * @param num_rules     Number of rules in the array.
+ */
+void program_forward_rules(bf_rt_session_hdl **session,
+                           bf_rt_target_t *dev_tgt,
+                           bf_rt_table_hdl *table_hdl,
+                           decision_rule_t *rules,
+                           int num_rules) {
+    
+    bf_rt_table_key_hdl *key;
+    bf_rt_table_data_hdl *data;
+    bf_rt_id_t k_f1, k_f2, k_f3;
+    bf_rt_id_t a_fwd, a_drop;
+    bf_rt_id_t d_dst_mac, d_port;
+
+    P4_CHECK(bf_rt_table_key_allocate(table_hdl, &key));
+    P4_CHECK(bf_rt_table_data_allocate(table_hdl, &data));
+
+    // Get IDs
+    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_1", &k_f1));
+    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_2", &k_f2));
+    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_3", &k_f3));
+    
+    P4_CHECK(bf_rt_action_name_to_id(table_hdl, "SwitchIngress.ai_ipv4_forward", &a_fwd));
+    P4_CHECK(bf_rt_action_name_to_id(table_hdl, "SwitchIngress.ai_drop", &a_drop));
+    
+    P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, "dst_mac", a_fwd, &d_dst_mac));
+    P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, "egress_port", a_fwd, &d_port)); 
+
+    for(int r = 0; r < num_rules; r++) {
+        decision_rule_t rule = rules[r];
+        
+        for (int i = rule.f1_id_start; i <= rule.f1_id_end; i++) {
+            for (int j = rule.f2_id_start; j <= rule.f2_id_end; j++) {
+                for (int k = rule.f3_id_start; k <= rule.f3_id_end; k++) {
+                    
+                    P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
+                    P4_CHECK(bf_rt_key_field_set_value(key, k_f1, i));
+                    P4_CHECK(bf_rt_key_field_set_value(key, k_f2, j));
+                    P4_CHECK(bf_rt_key_field_set_value(key, k_f3, k));
+
+                    if (rule.type == ACTION_DROP) {
+                        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_drop, &data));
+                    } else {
+                        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_fwd, &data));
+                        P4_CHECK(bf_rt_data_field_set_value(data, d_port, rule.egress_port));
+                        P4_CHECK(bf_rt_data_field_set_value_ptr(data, d_dst_mac, rule.dst_mac, 6));
+                    }
+
+                    P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
+                }
+            }
+        }
+    }
+    
+    P4_CHECK(bf_rt_table_key_deallocate(key));
+    P4_CHECK(bf_rt_table_data_deallocate(data));
+    P4_CHECK(bf_rt_session_complete_operations(*session));
+    printf("Programmed forwarding rules successfully.\n");
+}
+
 int main()
 {
     printf("Hello, World!\n");
-    bf_status_t bf_status;
     switch_t iswitch;
     bf_switchd_context_t *switchd_ctx;
     bf_rt_target_t *dev_tgt = &iswitch.dev_tgt;
@@ -177,7 +275,7 @@ int main()
         printf("Cannot allocate switchd context\n");
         return -1;
     }
-    const char *P4_PROG_NAME = "simple_forward";
+    const char *P4_PROG_NAME = "switch";
     switchd_setup(switchd_ctx, P4_PROG_NAME);
     printf("\nbf_switchd is initialized successfully!\n");
 
@@ -191,115 +289,144 @@ int main()
 
     // Key field ids
     bf_rt_id_t kid_ingress_port;
+
     // Action Ids
     bf_rt_id_t aid_ai_forward;
     bf_rt_id_t aid_ai_drop;
+    bf_rt_id_t aid_ai_ipv4_forward;
+    bf_rt_id_t aid_ai_select_1;
+    bf_rt_id_t aid_ai_select_2;
+    bf_rt_id_t aid_ai_select_3;
+
     // Data field Ids for forward
     bf_rt_id_t did_egress_port;
 
     // Key and Data objects
     bf_rt_table_key_hdl *key;
     bf_rt_table_data_hdl *data;
-    bf_rt_table_hdl *table;
+    bf_rt_table_hdl *ti_feature_1_hdl, *ti_feature_2_hdl, *ti_feature_3_hdl, *ti_ipv4_forward_hdl;
 
-    // Get table object from name
-    printf("Get table object from name\n");
-    bf_status = bf_rt_table_from_name_get(bfrt_info,
-                                          "SwitchIngress.ti_forward",
-                                          &table);
+    // Get table objects from name
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_1", &ti_feature_1_hdl));
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_2", &ti_feature_2_hdl));
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_3", &ti_feature_3_hdl));
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_ipv4_forward", &ti_ipv4_forward_hdl));
+    printf("All table handles obtained successfully!\n");
 
-    assert(bf_status == BF_SUCCESS);
-    printf("Get table object from name successfully!\n");
+    // Program featurees
+    // proto = []
+    // src = [11, 22157, 23505, 43174, 49930]
+    // dst = [6039, 9144, 22157]
+    
+    // Feature 1: Proto 
+    uint64_t thres_proto[] = {0, 32};
+    program_feature_table(session, dev_tgt, ti_feature_1_hdl, 
+                          "hdr.ipv4.protocol", "SwitchIngress.ai_select_1", "feature_val_1", 
+                          thres_proto, 2);
 
-    // Allocate key and data once, and use reset across different uses
-    bf_status = bf_rt_table_key_allocate(table, &key);
-    assert(bf_status == BF_SUCCESS);
-    bf_status = bf_rt_table_data_allocate(table, &data);
-    assert(bf_status == BF_SUCCESS);
+    // Feature 2: Src
+    uint64_t thres_src[] = {0, 11, 22157, 23505, 43174, 49930, 65535};
+    program_feature_table(session, dev_tgt, ti_feature_2_hdl, 
+                          "hdr.tcp.src_port", "SwitchIngress.ai_select_2", "feature_val_2", 
+                          thres_src, 7);
 
-    // Get field-ids for key field
-    bf_status = bf_rt_key_field_id_get(table, "ig_intr_md.ingress_port",
-                                       &kid_ingress_port);
-    assert(bf_status == BF_SUCCESS);
-    // Get action Ids for action forward
-    bf_status = bf_rt_action_name_to_id(table, "SwitchIngress.ai_forward",
-                                        &aid_ai_forward);
-    assert(bf_status == BF_SUCCESS);
-    bf_status = bf_rt_action_name_to_id(table, "SwitchIngress.ai_drop",
-                                        &aid_ai_drop);
-    assert(bf_status == BF_SUCCESS);
-    // Get field-ids for data field
-    bf_status = bf_rt_data_field_id_with_action_get(
-        table, "egress_port",
-        aid_ai_forward,
-        &did_egress_port);
-    assert(bf_status == BF_SUCCESS);
-    bf_status = bf_rt_session_complete_operations(*session);
-    assert(bf_status == BF_SUCCESS);
-    printf("Table ti_forward is init correctly!\n");
+    // Feature 3: Dst
+    uint64_t thres_dst[] = {0, 6039, 9144, 22157, 65535};
+    program_feature_table(session, dev_tgt, ti_feature_3_hdl, 
+                          "hdr.tcp.dst_port", "SwitchIngress.ai_select_3", "feature_val_3", 
+                          thres_dst, 5);
 
-    // Add entries into the table
+    // Program forwarding rules
+    
+    #define MAX_F1 1
+    #define MAX_F2 6
+    #define MAX_F3 4
 
-    // Reset key before use
-    bf_rt_table_key_reset(table, &key);
-    // Fill in the Key object
-    bf_status = bf_rt_key_field_set_value(key, kid_ingress_port, 132);
-    assert(bf_status == BF_SUCCESS);
-    // Reset data before use
-    bf_rt_table_action_data_reset(table, aid_ai_forward, &data);
-    // Fill in the Data object
-    bf_status = bf_rt_data_field_set_value(data, did_egress_port, 133);
-    assert(bf_status == BF_SUCCESS);
-    // Call table entry add API
-    bf_status = bf_rt_table_entry_add(table, *session, dev_tgt,
-                                        key,
-                                        data);
-    assert(bf_status == BF_SUCCESS);
-    bf_status = bf_rt_session_complete_operations(*session);
-    assert(bf_status == BF_SUCCESS);
-    printf("Add ti_forward entry successfully!\n");
+    uint8_t default_mac[6] = {0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01};
 
-    // Reset key before use
-    bf_rt_table_key_reset(table, &key);
-    // Fill in the Key object
-    bf_status = bf_rt_key_field_set_value(key, kid_ingress_port, 133);
-    assert(bf_status == BF_SUCCESS);
-    // Reset data before use
-    bf_rt_table_action_data_reset(table, aid_ai_forward, &data);
-    // Fill in the Data object
-    bf_status = bf_rt_data_field_set_value(data, did_egress_port, 132);
-    assert(bf_status == BF_SUCCESS);
-    // Call table entry add API
-    bf_status = bf_rt_table_entry_add(table, *session, dev_tgt,
-                                        key,
-                                        data);
-    assert(bf_status == BF_SUCCESS);
-    bf_status = bf_rt_session_complete_operations(*session);
-    assert(bf_status == BF_SUCCESS);
-    printf("Add ti_forward entry successfully!\n");
+    decision_rule_t rules[] = {
+        // Rule 1: when src<=11.0 then 2
+        // Tree: 2 -> Map: Class 2 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1, 
+          .f2_id_start=0, .f2_id_end=0,
+          .f3_id_start=0, .f3_id_end=MAX_F3, 
+          .type=ACTION_FORWARD, .egress_port=3, 
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
-    // while(1);
+        // Rule 2: when src>11.0 and dst<=6039.0 and src<=23505.5 then 0
+        // Tree: 0 -> Map: Class 0 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=1, .f2_id_end=2,
+          .f3_id_start=0, .f3_id_end=0,
+          .type=ACTION_FORWARD, .egress_port=3,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
-    // set up CPU-Dataplane channel
-    p4_channel_t channel;
-    int status;
-    status = create_p4_channel(&channel);
-    if (status == 0)
-    {
-        printf("upload channel created\n");
-    }
-    upload_h upload;
-    // Set up the portable using C bf_pm api, instead of BF_RT CPP
-    while (1)
-    {
+        // Rule 3: when src>11.0 and dst<=6039.0 and src>23505.5 and src<=49930.0 then 4
+        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=3, .f2_id_end=4,
+          .f3_id_start=0, .f3_id_end=0,
+          .type=ACTION_FORWARD, .egress_port=2,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
-        // Receive packet
-        status = process_packet_from_p4(&channel, &upload);
-        if (status > 0)
-        {
-            printf("Debug: Recv uploading\n");
-            print_upload_h(&upload);
-        }
-    }
+        // Rule 4: when src>11.0 and dst<=6039.0 and src>23505.5 and src>49930.0 then 3
+        // Tree: 3 -> Map: Class 3 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=5, .f2_id_end=5,
+          .f3_id_start=0, .f3_id_end=0,
+          .type=ACTION_FORWARD, .egress_port=3,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+
+        // Rule 5: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst<=9144.0 then 4
+        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=1, .f2_id_end=3,
+          .f3_id_start=1, .f3_id_end=1,
+          .type=ACTION_FORWARD, .egress_port=2,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+
+        // Rule 6: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst>9144.0 then 1
+        // Tree: 1 -> Map: Class 1 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=1, .f2_id_end=3,
+          .f3_id_start=2, .f3_id_end=2,
+          .type=ACTION_FORWARD, .egress_port=3,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+
+        // Rule 7: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src<=22157.5 then 1
+        // Tree: 1 -> Map: Class 1 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=1, .f2_id_end=1,
+          .f3_id_start=3, .f3_id_end=3,
+          .type=ACTION_FORWARD, .egress_port=3,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+
+        // Rule 8: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src>22157.5 then 3
+        // Tree: 3 -> Map: Class 3 is [3] -> Port 3
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=2, .f2_id_end=3,
+          .f3_id_start=3, .f3_id_end=3,
+          .type=ACTION_FORWARD, .egress_port=3,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+
+        // Rule 9: when src>11 and dst>6039 and src>43174.5 then 4
+        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
+        { .f1_id_start=0, .f1_id_end=MAX_F1,
+          .f2_id_start=4, .f2_id_end=5,
+          .f3_id_start=1, .f3_id_end=3,
+          .type=ACTION_FORWARD, .egress_port=2,
+          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+    };
+
+    program_forward_rules(
+        session, dev_tgt, 
+        ti_ipv4_forward_hdl, 
+        rules, 
+        sizeof(rules) / sizeof(rules[0])
+    );
+
+    printf("All table entries are added successfully!\n");
+    printf("Setup is completed successfully! Entering infinite loop...\n");
+    while(1);
     return 0;
 }
