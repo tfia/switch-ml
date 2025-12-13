@@ -344,13 +344,16 @@ int main()
 
     uint8_t default_mac[6] = {0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01};
 
+    #define EGRESS_PORT_2 133
+    #define EGRESS_PORT_3 134
+
     decision_rule_t rules[] = {
         // Rule 1: when src<=11.0 then 2
         // Tree: 2 -> Map: Class 2 is [3] -> Port 3
         { .f1_id_start=0, .f1_id_end=MAX_F1, 
           .f2_id_start=0, .f2_id_end=0,
           .f3_id_start=0, .f3_id_end=MAX_F3, 
-          .type=ACTION_FORWARD, .egress_port=3, 
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3, 
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 2: when src>11.0 and dst<=6039.0 and src<=23505.5 then 0
@@ -358,7 +361,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=1, .f2_id_end=2,
           .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=3,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 3: when src>11.0 and dst<=6039.0 and src>23505.5 and src<=49930.0 then 4
@@ -366,7 +369,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=3, .f2_id_end=4,
           .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=2,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 4: when src>11.0 and dst<=6039.0 and src>23505.5 and src>49930.0 then 3
@@ -374,7 +377,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=5, .f2_id_end=5,
           .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=3,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 5: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst<=9144.0 then 4
@@ -382,7 +385,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=1, .f2_id_end=3,
           .f3_id_start=1, .f3_id_end=1,
-          .type=ACTION_FORWARD, .egress_port=2,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 6: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst>9144.0 then 1
@@ -390,7 +393,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=1, .f2_id_end=3,
           .f3_id_start=2, .f3_id_end=2,
-          .type=ACTION_FORWARD, .egress_port=3,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 7: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src<=22157.5 then 1
@@ -398,7 +401,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=1, .f2_id_end=1,
           .f3_id_start=3, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=3,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 8: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src>22157.5 then 3
@@ -406,7 +409,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=2, .f2_id_end=3,
           .f3_id_start=3, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=3,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
 
         // Rule 9: when src>11 and dst>6039 and src>43174.5 then 4
@@ -414,7 +417,7 @@ int main()
         { .f1_id_start=0, .f1_id_end=MAX_F1,
           .f2_id_start=4, .f2_id_end=5,
           .f3_id_start=1, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=2,
+          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
           .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
     };
 
