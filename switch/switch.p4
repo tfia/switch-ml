@@ -82,6 +82,11 @@ control SwitchIngress(
             actions = { NoAction; ai_select_ipv6_next_hdr; }
             size = 1024;
         }
+        table ti_ipv6_options {
+            key = { hdr.ipv6.next_hdr : range; }
+            actions = { NoAction; ai_select_ipv6_options; }
+            size = 1024;
+        }
         table ti_tcp_src_port {
             key = { hdr.tcp.src_port : range; }
             actions = { NoAction; ai_select_tcp_src_port; }
@@ -148,6 +153,7 @@ control SwitchIngress(
             }
             if (hdr.ipv6.isValid()) {
                 ti_ipv6_next_hdr.apply();
+                ti_ipv6_options.apply();
             }
             if (hdr.tcp.isValid()) {
                 ti_tcp_src_port.apply();
