@@ -18,9 +18,17 @@ control SwitchIngress(
         inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
 
         action ai_set_default_features() {
-            ig_md.action_select_1 = 0;
-            ig_md.action_select_2 = 0;
-            ig_md.action_select_3 = 0;
+            ig_md.action_select_packet_len = 0;
+            ig_md.action_select_ether_type = 0;
+            ig_md.action_select_ipv4_proto = 0;
+            ig_md.action_select_ipv4_flags = 0;
+            ig_md.action_select_ipv6_next_hdr = 0;
+            ig_md.action_select_ipv6_options = 0;
+            ig_md.action_select_tcp_src_port = 0;
+            ig_md.action_select_tcp_dst_port = 0;
+            ig_md.action_select_tcp_flags = 0;
+            ig_md.action_select_udp_src_port = 0;
+            ig_md.action_select_udp_dst_port = 0;
         }
 
         action ai_drop() {
@@ -37,57 +45,82 @@ control SwitchIngress(
             ig_tm_md.ucast_egress_port = egress_port;
         }
 
-        action ai_select_1(bit<14> feature_val_1){
-            ig_md.action_select_1 = feature_val_1 ;
+        action ai_select_packet_len(bit<12> val) { ig_md.action_select_packet_len = val; }
+        action ai_select_ether_type(bit<12> val) { ig_md.action_select_ether_type = val; }
+        action ai_select_ipv4_proto(bit<12> val) { ig_md.action_select_ipv4_proto = val; }
+        action ai_select_ipv4_flags(bit<12> val) { ig_md.action_select_ipv4_flags = val; }
+        action ai_select_ipv6_next_hdr(bit<12> val) { ig_md.action_select_ipv6_next_hdr = val; }
+        action ai_select_ipv6_options(bit<12> val) { ig_md.action_select_ipv6_options = val; }
+        action ai_select_tcp_src_port(bit<12> val) { ig_md.action_select_tcp_src_port = val; }
+        action ai_select_tcp_dst_port(bit<12> val) { ig_md.action_select_tcp_dst_port = val; }
+        action ai_select_tcp_flags(bit<12> val) { ig_md.action_select_tcp_flags = val; }
+        action ai_select_udp_src_port(bit<12> val) { ig_md.action_select_udp_src_port = val; }
+        action ai_select_udp_dst_port(bit<12> val) { ig_md.action_select_udp_dst_port = val; }
 
+        table ti_packet_len {
+            key = { ig_md.ip_len : range; }
+            actions = { NoAction; ai_select_packet_len; }
+            size = 1024;
         }
-
-        action ai_select_2(bit<14> feature_val_2){
-            ig_md.action_select_2 = feature_val_2 ;
+        table ti_ether_type {
+            key = { hdr.ethernet.ether_type : range; }
+            actions = { NoAction; ai_select_ether_type; }
+            size = 1024;
         }
-
-        action ai_select_3(bit<14> feature_val_3){
-            ig_md.action_select_3 = feature_val_3;
+        table ti_ipv4_proto {
+            key = { hdr.ipv4.protocol : range; }
+            actions = { NoAction; ai_select_ipv4_proto; }
+            size = 1024;
         }
-
-        table ti_feature_1 {
-            key = {
-                hdr.ipv4.protocol: range;
-            }
-            actions = {
-                NoAction;
-                ai_select_1;
-            }
+        table ti_ipv4_flags {
+            key = { hdr.ipv4.flags : range; }
+            actions = { NoAction; ai_select_ipv4_flags; }
+            size = 1024;
+        }
+        table ti_ipv6_next_hdr {
+            key = { hdr.ipv6.next_hdr : range; }
+            actions = { NoAction; ai_select_ipv6_next_hdr; }
+            size = 1024;
+        }
+        table ti_tcp_src_port {
+            key = { hdr.tcp.src_port : range; }
+            actions = { NoAction; ai_select_tcp_src_port; }
+            size = 1024;
+        }
+        table ti_tcp_dst_port {
+            key = { hdr.tcp.dst_port : range; }
+            actions = { NoAction; ai_select_tcp_dst_port; }
+            size = 1024;
+        }
+        table ti_tcp_flags {
+            key = { hdr.tcp.flags : range; }
+            actions = { NoAction; ai_select_tcp_flags; }
+            size = 1024;
+        }
+        table ti_udp_src_port {
+            key = { hdr.udp.src_port : range; }
+            actions = { NoAction; ai_select_udp_src_port; }
+            size = 1024;
+        }
+        table ti_udp_dst_port {
+            key = { hdr.udp.dst_port : range; }
+            actions = { NoAction; ai_select_udp_dst_port; }
             size = 1024;
         }
 
-        table ti_feature_2 {
+        table ti_forward {
             key = {
-                hdr.tcp.src_port: range;
-            }
-            actions = {
-                NoAction;
-                ai_select_2;
-            }
-            size = 1024;
-        }
-
-        table ti_feature_3 {
-            key = {
-                hdr.tcp.dst_port: range;
-            }
-            actions = {
-                NoAction;
-                ai_select_3;
-            }
-            size = 1024;
-        }
-
-        table ti_ipv4_forward {
-            key = {
-                ig_md.action_select_1: exact;
-                ig_md.action_select_2: exact;
-                ig_md.action_select_3: exact;
+                ig_md.action_select_packet_len : range;
+                ig_md.action_select_ether_type : range;
+                ig_md.action_select_ipv4_proto : range;
+                ig_md.action_select_ipv4_flags : range;
+                ig_md.action_select_ipv6_next_hdr : range;
+                ig_md.action_select_ipv6_options : range;
+                ig_md.action_select_tcp_src_port : range;
+                ig_md.action_select_tcp_dst_port : range;
+                ig_md.action_select_tcp_flags : range;
+                ig_md.action_select_udp_src_port : range;
+                ig_md.action_select_udp_dst_port : range;
             }
             actions = {
                 ai_ipv4_forward;
@@ -99,19 +132,33 @@ control SwitchIngress(
         }
 
         apply {
+            ai_set_default_features();
             if (hdr.ipv4.isValid()) {
-                ai_set_default_features();
-                
-                ti_feature_1.apply();
-                if (hdr.ipv4.protocol == IP_PROTOCOLS_TCP && hdr.tcp.isValid()) {
-                    ti_feature_2.apply();
-                    ti_feature_3.apply();
-                } else { // not TCP, feature 2 and 3 not valid
-                    ig_md.action_select_2 = 1;
-                    ig_md.action_select_3 = 1;
-                }
-                ti_ipv4_forward.apply();
+                ig_md.ip_len = hdr.ipv4.total_len;
+            } else if (hdr.ipv6.isValid()) {
+                ig_md.ip_len = hdr.ipv6.payload_len + 16w40;
+            } else {
+                ig_md.ip_len = 0;
             }
+            ti_packet_len.apply();
+            ti_ether_type.apply();
+            if (hdr.ipv4.isValid()) {
+                ti_ipv4_proto.apply();
+                ti_ipv4_flags.apply();
+            }
+            if (hdr.ipv6.isValid()) {
+                ti_ipv6_next_hdr.apply();
+            }
+            if (hdr.tcp.isValid()) {
+                ti_tcp_src_port.apply();
+                ti_tcp_dst_port.apply();
+                ti_tcp_flags.apply();
+            }
+            if (hdr.udp.isValid()) {
+                ti_udp_src_port.apply();
+                ti_udp_dst_port.apply();
+            }
+            ti_forward.apply();
         }
 }
 

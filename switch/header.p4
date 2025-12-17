@@ -5,8 +5,10 @@ typedef bit<48> mac_addr_t;
 typedef bit<16> ether_type_t;
 typedef bit<8> ip_protocol_t;
 typedef bit<32> ipv4_addr_t;
+typedef bit<128> ipv6_addr_t;
 typedef bit<9>   portid_t;       
 const ether_type_t ETHERTYPE_IPV4 = 16w0x0800;
+const ether_type_t ETHERTYPE_IPV6 = 16w0x86DD;
 const ether_type_t ETHERTYPE_ARP = 16w0x0806;
 
 const ip_protocol_t IP_PROTOCOLS_ICMP = 1;
@@ -34,6 +36,18 @@ header ipv4_h {
     ipv4_addr_t src_ip;
     ipv4_addr_t dst_ip;
 }
+
+header ipv6_h {
+    bit<4> version;
+    bit<8> traffic_class;
+    bit<20> flow_label;
+    bit<16> payload_len;
+    bit<8> next_hdr;
+    bit<8> hop_limit;
+    ipv6_addr_t src_ip;
+    ipv6_addr_t dst_ip;
+}
+
 header icmp_h {
     bit<8>  type;
     bit<8>  code;
@@ -78,6 +92,7 @@ header tcp_h {
 struct header_t {
     ethernet_h ethernet;
     ipv4_h ipv4;
+    ipv6_h ipv6;
     arp_h arp;
     tcp_h tcp;
     udp_h udp;
@@ -85,14 +100,25 @@ struct header_t {
 }
 
 struct metadata_t {
-    bit<14> action_select_1;
-    bit<14> action_select_2;
-    bit<14> action_select_3;
+    bit<16> ip_len;
+    bit<12> action_select_packet_len;
+    bit<12> action_select_ether_type;
+    bit<12> action_select_ipv4_proto;
+    bit<12> action_select_ipv4_flags;
+    bit<12> action_select_ipv6_next_hdr;
+    bit<12> action_select_ipv6_options;
+    bit<12> action_select_tcp_src_port;
+    bit<12> action_select_tcp_dst_port;
+    bit<12> action_select_tcp_flags;
+    bit<12> action_select_udp_src_port;
+    bit<12> action_select_udp_dst_port;
 }
+
 struct egress_metadata_t{
     ipv4_addr_t port_ip;
     mac_addr_t port_mac;
 }
+
 struct empty_header_t {}
 
 struct empty_metadata_t {}

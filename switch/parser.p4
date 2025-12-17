@@ -21,7 +21,17 @@ parser SwitchIngressParser(
         pkt.extract(hdr.ethernet);
         transition select(hdr.ethernet.ether_type) {
             ETHERTYPE_IPV4 : parse_ipv4;
+            ETHERTYPE_IPV6 : parse_ipv6;
             ETHERTYPE_ARP : parse_arp;
+            default: accept;
+        }
+    }
+
+    state parse_ipv6 {
+        pkt.extract(hdr.ipv6);
+        transition select(hdr.ipv6.next_hdr) {
+            IP_PROTOCOLS_UDP : parse_udp;
+            IP_PROTOCOLS_TCP : parse_tcp;
             default: accept;
         }
     }
@@ -82,7 +92,17 @@ parser SwitchEgressParser(
         pkt.extract(hdr.ethernet);
         transition select(hdr.ethernet.ether_type) {
             ETHERTYPE_IPV4 : parse_ipv4;
+            ETHERTYPE_IPV6 : parse_ipv6;
             ETHERTYPE_ARP : parse_arp;
+            default: accept;
+        }
+    }
+
+    state parse_ipv6 {
+        pkt.extract(hdr.ipv6);
+        transition select(hdr.ipv6.next_hdr) {
+            IP_PROTOCOLS_UDP : parse_udp;
+            IP_PROTOCOLS_TCP : parse_tcp;
             default: accept;
         }
     }
