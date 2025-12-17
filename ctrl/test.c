@@ -4,20 +4,18 @@
 #include "utils.h"
 #include <stdlib.h>
 
+#define NUM_FEATURES 11
 
 typedef enum {
     ACTION_DROP = 0,
     ACTION_FORWARD = 1
 } action_type_t;
 
-// For "when...then..." decision rules
-// -1 for Don't Care
 typedef struct {
-    int f1_id_start; int f1_id_end; // ID range
-    int f2_id_start; int f2_id_end;
-    int f3_id_start; int f3_id_end;
+    int f_id_start[NUM_FEATURES];
+    int f_id_end[NUM_FEATURES];
     action_type_t type;
-    int egress_port; // Dismiss if type == ACTION_DROP
+    int egress_port;
     uint8_t dst_mac[6];
 } decision_rule_t;
 
@@ -188,6 +186,20 @@ void program_feature_table(bf_rt_session_hdl **session,
     printf("Programmed feature table for key '%s'\n", key_field_name);
 }
 
+const char *forward_key_names[NUM_FEATURES] = {
+    "ig_md.action_select_packet_len",
+    "ig_md.action_select_ether_type",
+    "ig_md.action_select_ipv4_proto",
+    "ig_md.action_select_ipv4_flags",
+    "ig_md.action_select_ipv6_next_hdr",
+    "ig_md.action_select_ipv6_options",
+    "ig_md.action_select_tcp_src_port",
+    "ig_md.action_select_tcp_dst_port",
+    "ig_md.action_select_tcp_flags",
+    "ig_md.action_select_udp_src_port",
+    "ig_md.action_select_udp_dst_port"
+};
+
 /**
  * @brief Programs the forwarding decision table based on provided rules.
  *
@@ -205,17 +217,17 @@ void program_forward_rules(bf_rt_session_hdl **session,
     
     bf_rt_table_key_hdl *key;
     bf_rt_table_data_hdl *data;
-    bf_rt_id_t k_f1, k_f2, k_f3;
+    bf_rt_id_t key_ids[NUM_FEATURES];
     bf_rt_id_t a_fwd, a_drop;
     bf_rt_id_t d_dst_mac, d_port;
 
     P4_CHECK(bf_rt_table_key_allocate(table_hdl, &key));
     P4_CHECK(bf_rt_table_data_allocate(table_hdl, &data));
 
-    // Get IDs
-    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_1", &k_f1));
-    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_2", &k_f2));
-    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.action_select_3", &k_f3));
+    // Get Key IDs
+    for(int i = 0; i < NUM_FEATURES; i++) {
+        P4_CHECK(bf_rt_key_field_id_get(table_hdl, forward_key_names[i], &key_ids[i]));
+    }
     
     P4_CHECK(bf_rt_action_name_to_id(table_hdl, "SwitchIngress.ai_ipv4_forward", &a_fwd));
     P4_CHECK(bf_rt_action_name_to_id(table_hdl, "SwitchIngress.ai_drop", &a_drop));
@@ -226,27 +238,22 @@ void program_forward_rules(bf_rt_session_hdl **session,
     for(int r = 0; r < num_rules; r++) {
         decision_rule_t rule = rules[r];
         
-        for (int i = rule.f1_id_start; i <= rule.f1_id_end; i++) {
-            for (int j = rule.f2_id_start; j <= rule.f2_id_end; j++) {
-                for (int k = rule.f3_id_start; k <= rule.f3_id_end; k++) {
-                    
-                    P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
-                    P4_CHECK(bf_rt_key_field_set_value(key, k_f1, i));
-                    P4_CHECK(bf_rt_key_field_set_value(key, k_f2, j));
-                    P4_CHECK(bf_rt_key_field_set_value(key, k_f3, k));
+        P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
 
-                    if (rule.type == ACTION_DROP) {
-                        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_drop, &data));
-                    } else {
-                        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_fwd, &data));
-                        P4_CHECK(bf_rt_data_field_set_value(data, d_port, rule.egress_port));
-                        P4_CHECK(bf_rt_data_field_set_value_ptr(data, d_dst_mac, rule.dst_mac, 6));
-                    }
-
-                    P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
-                }
-            }
+        // Set ranges for all 11 features
+        for(int i = 0; i < NUM_FEATURES; i++) {
+            P4_CHECK(bf_rt_key_field_set_value_range(key, key_ids[i], rule.f_id_start[i], rule.f_id_end[i]));
         }
+
+        if (rule.type == ACTION_DROP) {
+            P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_drop, &data));
+        } else {
+            P4_CHECK(bf_rt_table_action_data_reset(table_hdl, a_fwd, &data));
+            P4_CHECK(bf_rt_data_field_set_value(data, d_port, rule.egress_port));
+            P4_CHECK(bf_rt_data_field_set_value_ptr(data, d_dst_mac, rule.dst_mac, 6));
+        }
+
+        P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
     }
     
     P4_CHECK(bf_rt_table_key_deallocate(key));
@@ -287,146 +294,71 @@ int main()
     port_setup(dev_tgt, PORT_LIST, ARRLEN(PORT_LIST));
     printf("$PORT table is set up successfully!\n");
 
-    // Key field ids
-    bf_rt_id_t kid_ingress_port;
+    // Program Features
+    // Define thresholds for testing
+    uint64_t thres_pkt_len[] = {64, 128, 256, 512, 1024, 1518};
+    uint64_t thres_ether_type[] = {0x0800, 0x0806, 0x86DD};
+    uint64_t thres_ipv4_proto[] = {1, 6, 17};
+    uint64_t thres_ipv4_flags[] = {0, 1, 2};
+    uint64_t thres_ipv6_next_hdr[] = {6, 17, 58};
+    uint64_t thres_ipv6_options[] = {0, 43, 44, 50, 51, 60};
+    uint64_t thres_tcp_src[] = {80, 443, 8080};
+    uint64_t thres_tcp_dst[] = {80, 443, 8080};
+    uint64_t thres_tcp_flags[] = {0x02, 0x10, 0x18}; // SYN, ACK, PSH+ACK
+    uint64_t thres_udp_src[] = {53, 123};
+    uint64_t thres_udp_dst[] = {53, 123};
 
-    // Action Ids
-    bf_rt_id_t aid_ai_forward;
-    bf_rt_id_t aid_ai_drop;
-    bf_rt_id_t aid_ai_ipv4_forward;
-    bf_rt_id_t aid_ai_select_1;
-    bf_rt_id_t aid_ai_select_2;
-    bf_rt_id_t aid_ai_select_3;
+    struct {
+        const char *table; const char *key; const char *action; const char *param;
+        uint64_t *thres; int num;
+    } features[] = {
+        {"SwitchIngress.ti_packet_len", "ig_md.ip_len", "SwitchIngress.ai_select_packet_len", "val", thres_pkt_len, 6},
+        {"SwitchIngress.ti_ether_type", "hdr.ethernet.ether_type", "SwitchIngress.ai_select_ether_type", "val", thres_ether_type, 3},
+        {"SwitchIngress.ti_ipv4_proto", "hdr.ipv4.protocol", "SwitchIngress.ai_select_ipv4_proto", "val", thres_ipv4_proto, 3},
+        {"SwitchIngress.ti_ipv4_flags", "hdr.ipv4.flags", "SwitchIngress.ai_select_ipv4_flags", "val", thres_ipv4_flags, 3},
+        {"SwitchIngress.ti_ipv6_next_hdr", "hdr.ipv6.next_hdr", "SwitchIngress.ai_select_ipv6_next_hdr", "val", thres_ipv6_next_hdr, 3},
+        {"SwitchIngress.ti_ipv6_options", "hdr.ipv6.next_hdr", "SwitchIngress.ai_select_ipv6_options", "val", thres_ipv6_options, 6},
+        {"SwitchIngress.ti_tcp_src_port", "hdr.tcp.src_port", "SwitchIngress.ai_select_tcp_src_port", "val", thres_tcp_src, 3},
+        {"SwitchIngress.ti_tcp_dst_port", "hdr.tcp.dst_port", "SwitchIngress.ai_select_tcp_dst_port", "val", thres_tcp_dst, 3},
+        {"SwitchIngress.ti_tcp_flags", "hdr.tcp.flags", "SwitchIngress.ai_select_tcp_flags", "val", thres_tcp_flags, 3},
+        {"SwitchIngress.ti_udp_src_port", "hdr.udp.src_port", "SwitchIngress.ai_select_udp_src_port", "val", thres_udp_src, 2},
+        {"SwitchIngress.ti_udp_dst_port", "hdr.udp.dst_port", "SwitchIngress.ai_select_udp_dst_port", "val", thres_udp_dst, 2},
+    };
 
-    // Data field Ids for forward
-    bf_rt_id_t did_egress_port;
+    for (int i = 0; i < 11; i++) {
+        bf_rt_table_hdl *table_hdl;
+        P4_CHECK(bf_rt_table_from_name_get(bfrt_info, features[i].table, &table_hdl));
+        program_feature_table(session, dev_tgt, table_hdl, 
+                              features[i].key, features[i].action, features[i].param, 
+                              features[i].thres, features[i].num);
+    }
 
-    // Key and Data objects
-    bf_rt_table_key_hdl *key;
-    bf_rt_table_data_hdl *data;
-    bf_rt_table_hdl *ti_feature_1_hdl, *ti_feature_2_hdl, *ti_feature_3_hdl, *ti_ipv4_forward_hdl;
-
-    // Get table objects from name
-    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_1", &ti_feature_1_hdl));
-    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_2", &ti_feature_2_hdl));
-    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_feature_3", &ti_feature_3_hdl));
-    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_ipv4_forward", &ti_ipv4_forward_hdl));
-    printf("All table handles obtained successfully!\n");
-
-    // Program featurees
-    // proto = []
-    // src = [11, 22157, 23505, 43174, 49930]
-    // dst = [6039, 9144, 22157]
-    
-    // Feature 1: Proto 
-    uint64_t thres_proto[] = {0, 32};
-    program_feature_table(session, dev_tgt, ti_feature_1_hdl, 
-                          "hdr.ipv4.protocol", "SwitchIngress.ai_select_1", "feature_val_1", 
-                          thres_proto, 2);
-
-    // Feature 2: Src
-    uint64_t thres_src[] = {0, 11, 22157, 23505, 43174, 49930, 65535};
-    program_feature_table(session, dev_tgt, ti_feature_2_hdl, 
-                          "hdr.tcp.src_port", "SwitchIngress.ai_select_2", "feature_val_2", 
-                          thres_src, 7);
-
-    // Feature 3: Dst
-    uint64_t thres_dst[] = {0, 6039, 9144, 22157, 65535};
-    program_feature_table(session, dev_tgt, ti_feature_3_hdl, 
-                          "hdr.tcp.dst_port", "SwitchIngress.ai_select_3", "feature_val_3", 
-                          thres_dst, 5);
-
-    // Program forwarding rules
-    
-    #define MAX_F1 1
-    #define MAX_F2 6
-    #define MAX_F3 4
-
-    uint8_t default_mac[6] = {0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01};
+    // Program Forwarding Rules
+    bf_rt_table_hdl *ti_forward_hdl;
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_forward", &ti_forward_hdl));
 
     #define EGRESS_PORT_2 133
     #define EGRESS_PORT_3 134
+    uint8_t mac_addr[6] = {0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01};
 
-    decision_rule_t rules[] = {
-        // Rule 1: when src<=11.0 then 2
-        // Tree: 2 -> Map: Class 2 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1, 
-          .f2_id_start=0, .f2_id_end=0,
-          .f3_id_start=0, .f3_id_end=MAX_F3, 
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3, 
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+    // Create 2 dummy rules
+    decision_rule_t rules[2];
+    
+    // Rule 1: Match small packets (len id 0) -> Port 2
+    for(int i = 0; i < NUM_FEATURES; i++) { rules[0].f_id_start[i] = 0; rules[0].f_id_end[i] = 0xFFF; }
+    rules[0].f_id_start[0] = 0; rules[0].f_id_end[0] = 0; // Packet len ID 0
+    rules[0].type = ACTION_FORWARD;
+    rules[0].egress_port = EGRESS_PORT_2;
+    memcpy(rules[0].dst_mac, mac_addr, 6);
 
-        // Rule 2: when src>11.0 and dst<=6039.0 and src<=23505.5 then 0
-        // Tree: 0 -> Map: Class 0 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=1, .f2_id_end=2,
-          .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
+    // Rule 2: Match TCP packets (ipv4 proto id 1, assuming 6 is at index 1) -> Port 3
+    for(int i = 0; i < NUM_FEATURES; i++) { rules[1].f_id_start[i] = 0; rules[1].f_id_end[i] = 0xFFF; }
+    rules[1].f_id_start[2] = 1; rules[1].f_id_end[2] = 1; // IPv4 Proto ID 1 (TCP)
+    rules[1].type = ACTION_FORWARD;
+    rules[1].egress_port = EGRESS_PORT_3;
+    memcpy(rules[1].dst_mac, mac_addr, 6);
 
-        // Rule 3: when src>11.0 and dst<=6039.0 and src>23505.5 and src<=49930.0 then 4
-        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=3, .f2_id_end=4,
-          .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 4: when src>11.0 and dst<=6039.0 and src>23505.5 and src>49930.0 then 3
-        // Tree: 3 -> Map: Class 3 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=5, .f2_id_end=5,
-          .f3_id_start=0, .f3_id_end=0,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 5: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst<=9144.0 then 4
-        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=1, .f2_id_end=3,
-          .f3_id_start=1, .f3_id_end=1,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 6: when src>11 and dst>6039 and src<=43174.5 and dst<=22157.5 and dst>9144.0 then 1
-        // Tree: 1 -> Map: Class 1 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=1, .f2_id_end=3,
-          .f3_id_start=2, .f3_id_end=2,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 7: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src<=22157.5 then 1
-        // Tree: 1 -> Map: Class 1 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=1, .f2_id_end=1,
-          .f3_id_start=3, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 8: when src>11 and dst>6039 and src<=43174.5 and dst>22157.5 and src>22157.5 then 3
-        // Tree: 3 -> Map: Class 3 is [3] -> Port 3
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=2, .f2_id_end=3,
-          .f3_id_start=3, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_3,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-
-        // Rule 9: when src>11 and dst>6039 and src>43174.5 then 4
-        // Tree: 4 -> Map: Class 4 is [2] -> Port 2
-        { .f1_id_start=0, .f1_id_end=MAX_F1,
-          .f2_id_start=4, .f2_id_end=5,
-          .f3_id_start=1, .f3_id_end=3,
-          .type=ACTION_FORWARD, .egress_port=EGRESS_PORT_2,
-          .dst_mac={0x8C, 0x1F, 0x64, 0x69, 0x1F, 0x01} },
-    };
-
-    program_forward_rules(
-        session, dev_tgt, 
-        ti_ipv4_forward_hdl, 
-        rules, 
-        sizeof(rules) / sizeof(rules[0])
-    );
+    program_forward_rules(session, dev_tgt, ti_forward_hdl, rules, 2);
 
     printf("All table entries are added successfully!\n");
     printf("Setup is completed successfully! Entering infinite loop...\n");
