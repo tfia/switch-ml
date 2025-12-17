@@ -1,4 +1,6 @@
 .vscode/
 bf_drivers.log*
 control
+decision_tree
+kmeans
 zlog-cfg-cur

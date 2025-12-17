@@ -282,7 +282,7 @@ int main()
         printf("Cannot allocate switchd context\n");
         return -1;
     }
-    const char *P4_PROG_NAME = "switch";
+    const char *P4_PROG_NAME = "decision_tree";
     switchd_setup(switchd_ctx, P4_PROG_NAME);
     printf("\nbf_switchd is initialized successfully!\n");
 

@@ -1,15 +1,15 @@
-.PHONY: switch switch-p4 switch-ctrl ctrl clean 
+.PHONY: switch switch-dt switch-ctrl ctrl clean 
 
 
-switch: switch-p4 ctrl
+switch: switch-dt ctrl
 
-switch-p4: switch/switch.p4 switch/header.p4 switch/parser.p4 config.h
+switch-dt: switch/decision_tree.p4 switch/header.p4 switch/parser.p4 config.h
 	$(SDE_INSTALL)/bin/p4_build.sh $<
 
 
-ctrl: ctrl/test.c
+ctrl: ctrl/decision_tree.c
 	gcc -I$$SDE_INSTALL/include -g -O2 -std=gnu11  -L/usr/local/lib -L$$SDE_INSTALL/lib \
-		$< $(SDE_INSTALL)/lib/libboost_system.so.1.67.0 -o control \
+		$< $(SDE_INSTALL)/lib/libboost_system.so.1.67.0 -o decision_tree \
 		-ldriver  -lbfutils  -lm -lpthread  -lboost_system\
 		-Wl,-rpath=$$SDE_INSTALL/lib
 
