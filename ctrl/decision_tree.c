@@ -313,7 +313,7 @@ int main()
     P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_forward", &ti_forward_hdl));
 
     // Map decision tree class label (0..4) -> egress port.
-    static const int class_to_port[5] = {188, 188, 188, 188, 188};
+    static const int class_to_port[5] = {188, 132, 133, 134, 135};
 
     decision_rule_t rules[DT_NUM_RULES];
     for (int r = 0; r < DT_NUM_RULES; r++) {
