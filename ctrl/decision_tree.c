@@ -4,7 +4,9 @@
 #include "utils.h"
 #include <stdlib.h>
 
-#define NUM_FEATURES 11
+#include "decision_tree_rules.h"
+
+#define NUM_FEATURES DT_NUM_FEATURES
 
 typedef enum {
     ACTION_DROP = 0,
@@ -186,17 +188,11 @@ void program_feature_table(bf_rt_session_hdl **session,
 }
 
 const char *forward_key_names[NUM_FEATURES] = {
-    "ig_md.action_select_packet_len",
+    "ig_md.action_select_frame_len",
     "ig_md.action_select_ether_type",
-    "ig_md.action_select_ipv4_proto",
-    "ig_md.action_select_ipv4_flags",
-    "ig_md.action_select_ipv6_next_hdr",
-    "ig_md.action_select_ipv6_options",
-    "ig_md.action_select_tcp_src_port",
-    "ig_md.action_select_tcp_dst_port",
-    "ig_md.action_select_tcp_flags",
-    "ig_md.action_select_udp_src_port",
-    "ig_md.action_select_udp_dst_port"
+    "ig_md.action_select_ip_proto",
+    "ig_md.action_select_l4_src_port",
+    "ig_md.action_select_l4_dst_port"
 };
 
 /**
@@ -238,7 +234,7 @@ void program_forward_rules(bf_rt_session_hdl **session,
         
         P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
 
-        // Set ranges for all 11 features
+        // Set ranges for all discretized features
         for(int i = 0; i < NUM_FEATURES; i++) {
             P4_CHECK(bf_rt_key_field_set_value_range(key, key_ids[i], rule.f_id_start[i], rule.f_id_end[i]));
         }
@@ -291,38 +287,20 @@ int main()
     port_setup(dev_tgt, PORT_LIST, ARRLEN(PORT_LIST));
     printf("$PORT table is set up successfully!\n");
 
-    // Program Features
-    // Define thresholds for testing
-    uint64_t thres_pkt_len[] = {64, 128, 256, 512, 1024, 1518};
-    uint64_t thres_ether_type[] = {0x0800, 0x0806, 0x86DD};
-    uint64_t thres_ipv4_proto[] = {1, 6, 17};
-    uint64_t thres_ipv4_flags[] = {0, 1, 2};
-    uint64_t thres_ipv6_next_hdr[] = {6, 17, 58};
-    uint64_t thres_ipv6_options[] = {0, 43, 44, 50, 51, 60};
-    uint64_t thres_tcp_src[] = {80, 443, 8080};
-    uint64_t thres_tcp_dst[] = {80, 443, 8080};
-    uint64_t thres_tcp_flags[] = {0x02, 0x10, 0x18}; // SYN, ACK, PSH+ACK
-    uint64_t thres_udp_src[] = {53, 123};
-    uint64_t thres_udp_dst[] = {53, 123};
+    // Program Features (generated from models/decision_tree.txt)
 
     struct {
         const char *table; const char *key; const char *action; const char *param;
-        uint64_t *thres; int num;
+        const uint64_t *thres; int num;
     } features[] = {
-        {"SwitchIngress.ti_packet_len", "ig_md.ip_len", "SwitchIngress.ai_select_packet_len", "val", thres_pkt_len, 6},
-        {"SwitchIngress.ti_ether_type", "hdr.ethernet.ether_type", "SwitchIngress.ai_select_ether_type", "val", thres_ether_type, 3},
-        {"SwitchIngress.ti_ipv4_proto", "hdr.ipv4.protocol", "SwitchIngress.ai_select_ipv4_proto", "val", thres_ipv4_proto, 3},
-        {"SwitchIngress.ti_ipv4_flags", "hdr.ipv4.flags", "SwitchIngress.ai_select_ipv4_flags", "val", thres_ipv4_flags, 3},
-        {"SwitchIngress.ti_ipv6_next_hdr", "hdr.ipv6.next_hdr", "SwitchIngress.ai_select_ipv6_next_hdr", "val", thres_ipv6_next_hdr, 3},
-        {"SwitchIngress.ti_ipv6_options", "hdr.ipv6.next_hdr", "SwitchIngress.ai_select_ipv6_options", "val", thres_ipv6_options, 6},
-        {"SwitchIngress.ti_tcp_src_port", "hdr.tcp.src_port", "SwitchIngress.ai_select_tcp_src_port", "val", thres_tcp_src, 3},
-        {"SwitchIngress.ti_tcp_dst_port", "hdr.tcp.dst_port", "SwitchIngress.ai_select_tcp_dst_port", "val", thres_tcp_dst, 3},
-        {"SwitchIngress.ti_tcp_flags", "hdr.tcp.flags", "SwitchIngress.ai_select_tcp_flags", "val", thres_tcp_flags, 3},
-        {"SwitchIngress.ti_udp_src_port", "hdr.udp.src_port", "SwitchIngress.ai_select_udp_src_port", "val", thres_udp_src, 2},
-        {"SwitchIngress.ti_udp_dst_port", "hdr.udp.dst_port", "SwitchIngress.ai_select_udp_dst_port", "val", thres_udp_dst, 2},
+        {"SwitchIngress.ti_frame_len", "ig_md.frame_len", "SwitchIngress.ai_select_frame_len", "val", dt_thres_frame_len, DT_THRES_FRAME_LEN_LEN},
+        {"SwitchIngress.ti_ether_type", "hdr.ethernet.ether_type", "SwitchIngress.ai_select_ether_type", "val", dt_thres_ether_type, DT_THRES_ETHER_TYPE_LEN},
+        {"SwitchIngress.ti_ip_proto", "ig_md.ip_proto", "SwitchIngress.ai_select_ip_proto", "val", dt_thres_ip_proto, DT_THRES_IP_PROTO_LEN},
+        {"SwitchIngress.ti_l4_src_port", "ig_md.l4_src_port", "SwitchIngress.ai_select_l4_src_port", "val", dt_thres_l4_src_port, DT_THRES_L4_SRC_PORT_LEN},
+        {"SwitchIngress.ti_l4_dst_port", "ig_md.l4_dst_port", "SwitchIngress.ai_select_l4_dst_port", "val", dt_thres_l4_dst_port, DT_THRES_L4_DST_PORT_LEN},
     };
 
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < (int)ARRLEN(features); i++) {
         bf_rt_table_hdl *table_hdl;
         P4_CHECK(bf_rt_table_from_name_get(bfrt_info, features[i].table, &table_hdl));
         program_feature_table(session, dev_tgt, table_hdl, 
@@ -334,20 +312,21 @@ int main()
     bf_rt_table_hdl *ti_forward_hdl;
     P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_forward", &ti_forward_hdl));
 
-    #define EGRESS_PORT 188
+    // Map decision tree class label (0..4) -> egress port.
+    static const int class_to_port[5] = {188, 188, 188, 188, 188};
 
-    // Create 1 catch-all rule to forward everything to EGRESS_PORT
-    decision_rule_t rules[1];
-    
-    // Rule 1: Match ALL -> Port 188
-    for(int i = 0; i < NUM_FEATURES; i++) { 
-        rules[0].f_id_start[i] = 0; 
-        rules[0].f_id_end[i] = 0xFFF; 
+    decision_rule_t rules[DT_NUM_RULES];
+    for (int r = 0; r < DT_NUM_RULES; r++) {
+        for (int i = 0; i < NUM_FEATURES; i++) {
+            rules[r].f_id_start[i] = dt_rule_f_id_start[r][i];
+            rules[r].f_id_end[i] = dt_rule_f_id_end[r][i];
+        }
+        rules[r].type = ACTION_FORWARD;
+        uint8_t cls = dt_rule_class[r];
+        rules[r].egress_port = class_to_port[cls];
     }
-    rules[0].type = ACTION_FORWARD;
-    rules[0].egress_port = EGRESS_PORT;
 
-    program_forward_rules(session, dev_tgt, ti_forward_hdl, rules, 1);
+    program_forward_rules(session, dev_tgt, ti_forward_hdl, rules, DT_NUM_RULES);
 
     printf("All table entries are added successfully!\n");
     printf("Setup is completed successfully! Entering infinite loop...\n");
