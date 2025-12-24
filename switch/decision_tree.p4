@@ -7,11 +7,12 @@
 #endif
 
 #include "header.p4"
+#define metadata_t decision_tree_metadata_t
 #include "parser.p4"
 
 control SwitchIngress(
         inout header_t hdr,
-        inout metadata_t ig_md,
+        inout decision_tree_metadata_t ig_md,
         in ingress_intrinsic_metadata_t ig_intr_md,
         in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
         inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
@@ -36,12 +37,6 @@ control SwitchIngress(
         }
 
         action ai_forward(portid_t egress_port){
-            ig_tm_md.ucast_egress_port = egress_port;
-        }
-
-        action ai_ipv4_forward(mac_addr_t dst_mac, portid_t egress_port){
-            hdr.ethernet.src_mac = hdr.ethernet.dst_mac;
-            hdr.ethernet.dst_mac = dst_mac;
             ig_tm_md.ucast_egress_port = egress_port;
         }
 
@@ -128,7 +123,7 @@ control SwitchIngress(
                 ig_md.action_select_udp_dst_port : range;
             }
             actions = {
-                ai_ipv4_forward;
+                ai_forward;
                 ai_drop;
                 NoAction;
             }
@@ -137,6 +132,11 @@ control SwitchIngress(
         }
 
         apply {
+            // For iperf3 S -> C
+            if (ig_intr_md.ingress_port == 188) {
+                ai_forward(156);
+                exit;
+            }
             ai_set_default_features();
             if (hdr.ipv4.isValid()) {
                 ig_md.ip_len = hdr.ipv4.total_len;

@@ -99,7 +99,7 @@ struct header_t {
     icmp_h     icmp;
 }
 
-struct metadata_t {
+struct decision_tree_metadata_t {
     bit<16> ip_len;
     bit<12> action_select_packet_len;
     bit<12> action_select_ether_type;
@@ -112,6 +112,35 @@ struct metadata_t {
     bit<12> action_select_tcp_flags;
     bit<12> action_select_udp_src_port;
     bit<12> action_select_udp_dst_port;
+}
+
+struct kmeans_metadata_t {
+    bit<16> f_frame_len;
+    bit<16> f_eth_type;
+    bit<8>  f_ip_proto;
+    bit<3>  f_ip_flags;
+    bit<8>  f_ipv6_nxt;
+    bit<16> f_tcp_src;
+    bit<16> f_tcp_dst;
+    bit<8>  f_tcp_flags;
+    bit<16> f_udp_src;
+    bit<16> f_udp_dst;
+
+    bit<32> dist_c1;
+    bit<32> dist_c2;
+    bit<32> dist_c3;
+    bit<32> dist_c4;
+    bit<32> dist_c5;
+
+    bit<32> tmp_min_12;
+    bit<8>  tmp_cls_12;
+    bit<32> tmp_min_34;
+    bit<8>  tmp_cls_34;
+    bit<32> tmp_min_1234;
+    bit<8>  tmp_cls_1234;
+
+    bit<32> min_dist;
+    bit<8> classification; // 1 to 5
 }
 
 struct egress_metadata_t{
