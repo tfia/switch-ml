@@ -11,251 +11,251 @@
 #include "parser.p4"
 
 control SwitchIngress(
-        inout header_t hdr,
-        inout kmeans_metadata_t ig_md,
-        in ingress_intrinsic_metadata_t ig_intr_md,
-        in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
-        inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
-        inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
+    inout header_t hdr,
+    inout kmeans_metadata_t ig_md,
+    in ingress_intrinsic_metadata_t ig_intr_md,
+    in ingress_intrinsic_metadata_from_parser_t ig_prsr_md,
+    inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
+    inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
 
-        action ai_set_default_features() {
-            ig_md.dist_c1 = 0;
-            ig_md.dist_c2 = 0;
-            ig_md.dist_c3 = 0;
-            ig_md.dist_c4 = 0;
-            ig_md.dist_c5 = 0;
+    action ai_set_default_features() {
+        ig_md.dist_c1 = 0;
+        ig_md.dist_c2 = 0;
+        ig_md.dist_c3 = 0;
+        ig_md.dist_c4 = 0;
+        ig_md.dist_c5 = 0;
+    }
+
+    action ai_drop() {
+        ig_dprsr_md.drop_ctl = 0x1; // Drop packet.
+    }
+
+    action ai_forward(portid_t egress_port){
+        ig_tm_md.ucast_egress_port = egress_port;
+    }
+
+    action ai_accumulate_distance(bit<16> d1, bit<16> d2, bit<16> d3, bit<16> d4, bit<16> d5) {
+        ig_md.dist_c1 = ig_md.dist_c1 + d1;
+        ig_md.dist_c2 = ig_md.dist_c2 + d2;
+        ig_md.dist_c3 = ig_md.dist_c3 + d3;
+        ig_md.dist_c4 = ig_md.dist_c4 + d4;
+        ig_md.dist_c5 = ig_md.dist_c5 + d5;
+    }
+
+    table ti_f_frame_len {
+        key = { ig_md.f_frame_len : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 1024;
+        default_action = NoAction;
+    }
+    table ti_f_eth_type {
+        key = { ig_md.f_eth_type : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 16; 
+        default_action = NoAction;
+    }
+    table ti_f_ip_proto {
+        key = { ig_md.f_ip_proto : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 256;
+        default_action = NoAction;
+    }
+    table ti_f_ip_flags {
+        key = { ig_md.f_ip_flags : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 8;
+        default_action = NoAction;
+    }
+    table ti_f_ipv6_nxt {
+        key = { ig_md.f_ipv6_nxt : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 256;
+        default_action = NoAction;
+    }
+    table ti_f_tcp_src {
+        key = { ig_md.f_tcp_src : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 1024; 
+        default_action = NoAction;
+    }
+    table ti_f_tcp_dst {
+        key = { ig_md.f_tcp_dst : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 1024;
+        default_action = NoAction;
+    }
+    table ti_f_tcp_flags {
+        key = { ig_md.f_tcp_flags : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 64;
+        default_action = NoAction;
+    }
+    table ti_f_udp_src {
+        key = { ig_md.f_udp_src : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 1024;
+        default_action = NoAction;
+    }
+    table ti_f_udp_dst {
+        key = { ig_md.f_udp_dst : exact; }
+        actions = { ai_accumulate_distance; NoAction; }
+        size = 1024;
+        default_action = NoAction;
+    }
+
+    action ai_init_min() {
+        ig_md.min_dist = ig_md.dist_c1;
+        ig_md.classification = 1;
+    }
+
+    action ai_update_min_c2() {
+        ig_md.min_dist = ig_md.dist_c2;
+        ig_md.classification = 2;
+    }
+
+    action ai_update_min_c3() {
+        ig_md.min_dist = ig_md.dist_c3;
+        ig_md.classification = 3;
+    }
+
+    action ai_update_min_c4() {
+        ig_md.min_dist = ig_md.dist_c4;
+        ig_md.classification = 4;
+    }
+
+    action ai_update_min_c5() {
+        ig_md.min_dist = ig_md.dist_c5;
+        ig_md.classification = 5;
+    }
+
+    // --- Tables to update min_dist and classification ---
+    table ti_update_min_c2 {
+        key = { ig_md.delta_sign : exact; }
+        actions = { ai_update_min_c2; NoAction; }
+        size = 2;
+        const entries = {
+            (1w1) : ai_update_min_c2();
         }
+        default_action = NoAction;
+    }
 
-        action ai_drop() {
-            ig_dprsr_md.drop_ctl = 0x1; // Drop packet.
+    table ti_update_min_c3 {
+        key = { ig_md.delta_sign : exact; }
+        actions = { ai_update_min_c3; NoAction; }
+        size = 2;
+        const entries = {
+            (1w1) : ai_update_min_c3();
         }
+        default_action = NoAction;
+    }
 
-        action ai_forward(portid_t egress_port){
-            ig_tm_md.ucast_egress_port = egress_port;
+    table ti_update_min_c4 {
+        key = { ig_md.delta_sign : exact; }
+        actions = { ai_update_min_c4; NoAction; }
+        size = 2;
+        const entries = {
+            (1w1) : ai_update_min_c4();
         }
+        default_action = NoAction;
+    }
 
-        action ai_accumulate_distance(bit<16> d1, bit<16> d2, bit<16> d3, bit<16> d4, bit<16> d5) {
-            ig_md.dist_c1 = ig_md.dist_c1 + d1;
-            ig_md.dist_c2 = ig_md.dist_c2 + d2;
-            ig_md.dist_c3 = ig_md.dist_c3 + d3;
-            ig_md.dist_c4 = ig_md.dist_c4 + d4;
-            ig_md.dist_c5 = ig_md.dist_c5 + d5;
+    table ti_update_min_c5 {
+        key = { ig_md.delta_sign : exact; }
+        actions = { ai_update_min_c5; NoAction; }
+        size = 2;
+        const entries = {
+            (1w1) : ai_update_min_c5();
         }
+        default_action = NoAction;
+    }
+    // --- End of tables to update min_dist and classification ---
 
-        table ti_f_frame_len {
-            key = { ig_md.f_frame_len : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 1024;
-            default_action = NoAction;
+    table ti_forward {
+        key = {
+            ig_md.classification : exact; 
         }
-        table ti_f_eth_type {
-            key = { ig_md.f_eth_type : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 16; 
-            default_action = NoAction;
+        actions = {
+            ai_forward;
+            ai_drop;
+            NoAction;
         }
-        table ti_f_ip_proto {
-            key = { ig_md.f_ip_proto : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 256;
-            default_action = NoAction;
-        }
-        table ti_f_ip_flags {
-            key = { ig_md.f_ip_flags : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 8;
-            default_action = NoAction;
-        }
-        table ti_f_ipv6_nxt {
-            key = { ig_md.f_ipv6_nxt : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 256;
-            default_action = NoAction;
-        }
-        table ti_f_tcp_src {
-            key = { ig_md.f_tcp_src : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 1024; 
-            default_action = NoAction;
-        }
-        table ti_f_tcp_dst {
-            key = { ig_md.f_tcp_dst : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 1024;
-            default_action = NoAction;
-        }
-        table ti_f_tcp_flags {
-            key = { ig_md.f_tcp_flags : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 64;
-            default_action = NoAction;
-        }
-        table ti_f_udp_src {
-            key = { ig_md.f_udp_src : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 1024;
-            default_action = NoAction;
-        }
-        table ti_f_udp_dst {
-            key = { ig_md.f_udp_dst : exact; }
-            actions = { ai_accumulate_distance; NoAction; }
-            size = 1024;
-            default_action = NoAction;
-        }
+        size = 256;
+        default_action = ai_drop;
+    }
 
-        action ai_init_min() {
-            ig_md.min_dist = ig_md.dist_c1;
-            ig_md.classification = 1;
-        }
+    bit<17> delta17;
 
-        action ai_update_min_c2() {
-            ig_md.min_dist = ig_md.dist_c2;
-            ig_md.classification = 2;
-        }
+    apply {
+        ai_set_default_features();
 
-        action ai_update_min_c3() {
-            ig_md.min_dist = ig_md.dist_c3;
-            ig_md.classification = 3;
-        }
+        ig_md.f_eth_type = hdr.ethernet.ether_type;
 
-        action ai_update_min_c4() {
-            ig_md.min_dist = ig_md.dist_c4;
-            ig_md.classification = 4;
-        }
-
-        action ai_update_min_c5() {
-            ig_md.min_dist = ig_md.dist_c5;
-            ig_md.classification = 5;
-        }
-
-        // --- Tables to update min_dist and classification ---
-        table ti_update_min_c2 {
-            key = { ig_md.delta_sign : exact; }
-            actions = { ai_update_min_c2; NoAction; }
-            size = 2;
-            const entries = {
-                (1w1) : ai_update_min_c2();
-            }
-            default_action = NoAction;
-        }
-
-        table ti_update_min_c3 {
-            key = { ig_md.delta_sign : exact; }
-            actions = { ai_update_min_c3; NoAction; }
-            size = 2;
-            const entries = {
-                (1w1) : ai_update_min_c3();
-            }
-            default_action = NoAction;
-        }
-
-        table ti_update_min_c4 {
-            key = { ig_md.delta_sign : exact; }
-            actions = { ai_update_min_c4; NoAction; }
-            size = 2;
-            const entries = {
-                (1w1) : ai_update_min_c4();
-            }
-            default_action = NoAction;
-        }
-
-        table ti_update_min_c5 {
-            key = { ig_md.delta_sign : exact; }
-            actions = { ai_update_min_c5; NoAction; }
-            size = 2;
-            const entries = {
-                (1w1) : ai_update_min_c5();
-            }
-            default_action = NoAction;
-        }
-        // --- End of tables to update min_dist and classification ---
-
-        table ti_forward {
-            key = {
-                ig_md.classification : exact; 
-            }
-            actions = {
-                ai_forward;
-                ai_drop;
-                NoAction;
-            }
-            size = 256;
-            default_action = ai_drop;
-        }
-
-        bit<17> delta17;
-
-        apply {
-            ai_set_default_features();
-
-            ig_md.f_eth_type = hdr.ethernet.ether_type;
-
-            if (hdr.ipv4.isValid()) {
-                ig_md.f_frame_len = hdr.ipv4.total_len;
-                ig_md.f_ip_proto  = hdr.ipv4.protocol;
-                ig_md.f_ip_flags  = (bit<3>)hdr.ipv4.flags;
-                
-                // Zero out IPv6 features
-                ig_md.f_ipv6_nxt = 0;
-            } 
-            else if (hdr.ipv6.isValid()) {
-                ig_md.f_frame_len = hdr.ipv6.payload_len + 16w40;
-                ig_md.f_ipv6_nxt  = hdr.ipv6.next_hdr;
-
-                // Zero out IPv4 features
-                ig_md.f_ip_proto = 0;
-                ig_md.f_ip_flags = 0;
-            }
-
-            if (hdr.tcp.isValid()) {
-                ig_md.f_tcp_src = hdr.tcp.src_port;
-                ig_md.f_tcp_dst = hdr.tcp.dst_port;
-                ig_md.f_tcp_flags = (bit<8>)hdr.tcp.flags;
-            } else {
-                ig_md.f_tcp_src = 0;
-                ig_md.f_tcp_dst = 0;
-                ig_md.f_tcp_flags = 0;
-            }
-
-            if (hdr.udp.isValid()) {
-                ig_md.f_udp_src = hdr.udp.src_port;
-                ig_md.f_udp_dst = hdr.udp.dst_port;
-            } else {
-                ig_md.f_udp_src = 0;
-                ig_md.f_udp_dst = 0;
-            }
-
-            ti_f_frame_len.apply();
-            ti_f_eth_type.apply();
-            ti_f_ip_proto.apply();
-            ti_f_ip_flags.apply();
-            ti_f_ipv6_nxt.apply();
-            ti_f_tcp_src.apply();
-            ti_f_tcp_dst.apply();
-            ti_f_tcp_flags.apply();
-            ti_f_udp_src.apply();
-            ti_f_udp_dst.apply();
-
-            ai_init_min();
-
-            delta17 = (bit<17>)ig_md.dist_c2 - (bit<17>)ig_md.min_dist;
-            ig_md.delta_sign = delta17[16:16];
-            ti_update_min_c2.apply();
-
-            delta17 = (bit<17>)ig_md.dist_c3 - (bit<17>)ig_md.min_dist;
-            ig_md.delta_sign = delta17[16:16];
-            ti_update_min_c3.apply();
-
-            delta17 = (bit<17>)ig_md.dist_c4 - (bit<17>)ig_md.min_dist;
-            ig_md.delta_sign = delta17[16:16];
-            ti_update_min_c4.apply();
-
-            delta17 = (bit<17>)ig_md.dist_c5 - (bit<17>)ig_md.min_dist;
-            ig_md.delta_sign = delta17[16:16];
-            ti_update_min_c5.apply();
+        if (hdr.ipv4.isValid()) {
+            ig_md.f_frame_len = hdr.ipv4.total_len;
+            ig_md.f_ip_proto  = hdr.ipv4.protocol;
+            ig_md.f_ip_flags  = (bit<3>)hdr.ipv4.flags;
             
-            ti_forward.apply();
+            // Zero out IPv6 features
+            ig_md.f_ipv6_nxt = 0;
+        } 
+        else if (hdr.ipv6.isValid()) {
+            ig_md.f_frame_len = hdr.ipv6.payload_len + 16w40;
+            ig_md.f_ipv6_nxt  = hdr.ipv6.next_hdr;
+
+            // Zero out IPv4 features
+            ig_md.f_ip_proto = 0;
+            ig_md.f_ip_flags = 0;
         }
+
+        if (hdr.tcp.isValid()) {
+            ig_md.f_tcp_src = hdr.tcp.src_port;
+            ig_md.f_tcp_dst = hdr.tcp.dst_port;
+            ig_md.f_tcp_flags = (bit<8>)hdr.tcp.flags;
+        } else {
+            ig_md.f_tcp_src = 0;
+            ig_md.f_tcp_dst = 0;
+            ig_md.f_tcp_flags = 0;
+        }
+
+        if (hdr.udp.isValid()) {
+            ig_md.f_udp_src = hdr.udp.src_port;
+            ig_md.f_udp_dst = hdr.udp.dst_port;
+        } else {
+            ig_md.f_udp_src = 0;
+            ig_md.f_udp_dst = 0;
+        }
+
+        ti_f_frame_len.apply();
+        ti_f_eth_type.apply();
+        ti_f_ip_proto.apply();
+        ti_f_ip_flags.apply();
+        ti_f_ipv6_nxt.apply();
+        ti_f_tcp_src.apply();
+        ti_f_tcp_dst.apply();
+        ti_f_tcp_flags.apply();
+        ti_f_udp_src.apply();
+        ti_f_udp_dst.apply();
+
+        ai_init_min();
+
+        delta17 = (bit<17>)ig_md.dist_c2 - (bit<17>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[16:16];
+        ti_update_min_c2.apply();
+
+        delta17 = (bit<17>)ig_md.dist_c3 - (bit<17>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[16:16];
+        ti_update_min_c3.apply();
+
+        delta17 = (bit<17>)ig_md.dist_c4 - (bit<17>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[16:16];
+        ti_update_min_c4.apply();
+
+        delta17 = (bit<17>)ig_md.dist_c5 - (bit<17>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[16:16];
+        ti_update_min_c5.apply();
+        
+        ti_forward.apply();
+    }
 }
 
 control SwitchEgress(
