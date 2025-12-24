@@ -100,18 +100,18 @@ struct header_t {
 }
 
 struct decision_tree_metadata_t {
-    bit<16> ip_len;
-    bit<12> action_select_packet_len;
+    // Raw features (aligned to models/decision_tree.txt)
+    bit<16> frame_len;
+    bit<8>  ip_proto;
+    bit<16> l4_src_port;
+    bit<16> l4_dst_port;
+
+    // Discretized feature IDs used as keys in ti_forward
+    bit<12> action_select_frame_len;
     bit<12> action_select_ether_type;
-    bit<12> action_select_ipv4_proto;
-    bit<12> action_select_ipv4_flags;
-    bit<12> action_select_ipv6_next_hdr;
-    bit<12> action_select_ipv6_options;
-    bit<12> action_select_tcp_src_port;
-    bit<12> action_select_tcp_dst_port;
-    bit<12> action_select_tcp_flags;
-    bit<12> action_select_udp_src_port;
-    bit<12> action_select_udp_dst_port;
+    bit<12> action_select_ip_proto;
+    bit<12> action_select_l4_src_port;
+    bit<12> action_select_l4_dst_port;
 }
 
 struct kmeans_metadata_t {
