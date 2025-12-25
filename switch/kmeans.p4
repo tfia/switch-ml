@@ -57,7 +57,7 @@ control SwitchIngress(
     table ti_f_ip_proto {
         key = { ig_md.f_ip_proto : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 32768;
+        size = 256;
         default_action = NoAction;
     }
     table ti_f_l4_src_port {
