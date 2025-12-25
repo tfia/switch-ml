@@ -45,61 +45,31 @@ control SwitchIngress(
     table ti_f_frame_len {
         key = { ig_md.f_frame_len : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 1024;
+        size = 65536;
         default_action = NoAction;
     }
     table ti_f_eth_type {
         key = { ig_md.f_eth_type : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 16; 
+        size = 65536; 
         default_action = NoAction;
     }
     table ti_f_ip_proto {
         key = { ig_md.f_ip_proto : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 256;
+        size = 32768;
         default_action = NoAction;
     }
-    table ti_f_ip_flags {
-        key = { ig_md.f_ip_flags : exact; }
+    table ti_f_l4_src_port {
+        key = { ig_md.f_l4_src_port : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 8;
+        size = 65536; 
         default_action = NoAction;
     }
-    table ti_f_ipv6_nxt {
-        key = { ig_md.f_ipv6_nxt : exact; }
+    table ti_f_l4_dst_port {
+        key = { ig_md.f_l4_dst_port : exact; }
         actions = { ai_accumulate_distance; NoAction; }
-        size = 256;
-        default_action = NoAction;
-    }
-    table ti_f_tcp_src {
-        key = { ig_md.f_tcp_src : exact; }
-        actions = { ai_accumulate_distance; NoAction; }
-        size = 1024; 
-        default_action = NoAction;
-    }
-    table ti_f_tcp_dst {
-        key = { ig_md.f_tcp_dst : exact; }
-        actions = { ai_accumulate_distance; NoAction; }
-        size = 1024;
-        default_action = NoAction;
-    }
-    table ti_f_tcp_flags {
-        key = { ig_md.f_tcp_flags : exact; }
-        actions = { ai_accumulate_distance; NoAction; }
-        size = 64;
-        default_action = NoAction;
-    }
-    table ti_f_udp_src {
-        key = { ig_md.f_udp_src : exact; }
-        actions = { ai_accumulate_distance; NoAction; }
-        size = 1024;
-        default_action = NoAction;
-    }
-    table ti_f_udp_dst {
-        key = { ig_md.f_udp_dst : exact; }
-        actions = { ai_accumulate_distance; NoAction; }
-        size = 1024;
+        size = 65536;
         default_action = NoAction;
     }
 
@@ -186,6 +156,11 @@ control SwitchIngress(
     bit<17> delta17;
 
     apply {
+        // For iperf3 S -> C
+        if (ig_intr_md.ingress_port == 188) {
+            ai_forward(156);
+            exit;
+        }
         ai_set_default_features();
 
         ig_md.f_eth_type = hdr.ethernet.ether_type;
@@ -193,48 +168,24 @@ control SwitchIngress(
         if (hdr.ipv4.isValid()) {
             ig_md.f_frame_len = hdr.ipv4.total_len;
             ig_md.f_ip_proto  = hdr.ipv4.protocol;
-            ig_md.f_ip_flags  = (bit<3>)hdr.ipv4.flags;
-            
-            // Zero out IPv6 features
-            ig_md.f_ipv6_nxt = 0;
-        } 
-        else if (hdr.ipv6.isValid()) {
-            ig_md.f_frame_len = hdr.ipv6.payload_len + 16w40;
-            ig_md.f_ipv6_nxt  = hdr.ipv6.next_hdr;
-
-            // Zero out IPv4 features
-            ig_md.f_ip_proto = 0;
-            ig_md.f_ip_flags = 0;
         }
 
         if (hdr.tcp.isValid()) {
-            ig_md.f_tcp_src = hdr.tcp.src_port;
-            ig_md.f_tcp_dst = hdr.tcp.dst_port;
-            ig_md.f_tcp_flags = (bit<8>)hdr.tcp.flags;
+            ig_md.f_l4_src_port = hdr.tcp.src_port;
+            ig_md.f_l4_dst_port = hdr.tcp.dst_port;
+        } else if (hdr.udp.isValid()) {
+            ig_md.f_l4_src_port = hdr.udp.src_port;
+            ig_md.f_l4_dst_port = hdr.udp.dst_port;
         } else {
-            ig_md.f_tcp_src = 0;
-            ig_md.f_tcp_dst = 0;
-            ig_md.f_tcp_flags = 0;
-        }
-
-        if (hdr.udp.isValid()) {
-            ig_md.f_udp_src = hdr.udp.src_port;
-            ig_md.f_udp_dst = hdr.udp.dst_port;
-        } else {
-            ig_md.f_udp_src = 0;
-            ig_md.f_udp_dst = 0;
+            ig_md.f_l4_src_port = 0;
+            ig_md.f_l4_dst_port = 0;
         }
 
         ti_f_frame_len.apply();
         ti_f_eth_type.apply();
         ti_f_ip_proto.apply();
-        ti_f_ip_flags.apply();
-        ti_f_ipv6_nxt.apply();
-        ti_f_tcp_src.apply();
-        ti_f_tcp_dst.apply();
-        ti_f_tcp_flags.apply();
-        ti_f_udp_src.apply();
-        ti_f_udp_dst.apply();
+        ti_f_l4_src_port.apply();
+        ti_f_l4_dst_port.apply();
 
         ai_init_min();
 

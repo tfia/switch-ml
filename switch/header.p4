@@ -118,13 +118,8 @@ struct kmeans_metadata_t {
     bit<16> f_frame_len;
     bit<16> f_eth_type;
     bit<8>  f_ip_proto;
-    bit<3>  f_ip_flags;
-    bit<8>  f_ipv6_nxt;
-    bit<16> f_tcp_src;
-    bit<16> f_tcp_dst;
-    bit<8>  f_tcp_flags;
-    bit<16> f_udp_src;
-    bit<16> f_udp_dst;
+    bit<16> f_l4_src_port;
+    bit<16> f_l4_dst_port;
 
     bit<16> dist_c1;
     bit<16> dist_c2;
