@@ -34,7 +34,7 @@ control SwitchIngress(
         ig_tm_md.ucast_egress_port = egress_port;
     }
 
-    action ai_accumulate_distance(bit<16> d1, bit<16> d2, bit<16> d3, bit<16> d4, bit<16> d5) {
+    action ai_accumulate_distance(bit<32> d1, bit<32> d2, bit<32> d3, bit<32> d4, bit<32> d5) {
         ig_md.dist_c1 = ig_md.dist_c1 + d1;
         ig_md.dist_c2 = ig_md.dist_c2 + d2;
         ig_md.dist_c3 = ig_md.dist_c3 + d3;
@@ -153,7 +153,7 @@ control SwitchIngress(
         default_action = ai_drop;
     }
 
-    bit<17> delta17;
+    bit<33> delta17;
 
     apply {
         // For iperf3 S -> C
@@ -189,20 +189,20 @@ control SwitchIngress(
 
         ai_init_min();
 
-        delta17 = (bit<17>)ig_md.dist_c2 - (bit<17>)ig_md.min_dist;
-        ig_md.delta_sign = delta17[16:16];
+        delta17 = (bit<33>)ig_md.dist_c2 - (bit<33>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[32:32];
         ti_update_min_c2.apply();
 
-        delta17 = (bit<17>)ig_md.dist_c3 - (bit<17>)ig_md.min_dist;
-        ig_md.delta_sign = delta17[16:16];
+        delta17 = (bit<33>)ig_md.dist_c3 - (bit<33>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[32:32];
         ti_update_min_c3.apply();
 
-        delta17 = (bit<17>)ig_md.dist_c4 - (bit<17>)ig_md.min_dist;
-        ig_md.delta_sign = delta17[16:16];
+        delta17 = (bit<33>)ig_md.dist_c4 - (bit<33>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[32:32];
         ti_update_min_c4.apply();
 
-        delta17 = (bit<17>)ig_md.dist_c5 - (bit<17>)ig_md.min_dist;
-        ig_md.delta_sign = delta17[16:16];
+        delta17 = (bit<33>)ig_md.dist_c5 - (bit<33>)ig_md.min_dist;
+        ig_md.delta_sign = delta17[32:32];
         ti_update_min_c5.apply();
         
         ti_forward.apply();

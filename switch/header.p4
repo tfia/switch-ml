@@ -121,13 +121,13 @@ struct kmeans_metadata_t {
     bit<16> f_l4_src_port;
     bit<16> f_l4_dst_port;
 
-    bit<16> dist_c1;
-    bit<16> dist_c2;
-    bit<16> dist_c3;
-    bit<16> dist_c4;
-    bit<16> dist_c5;
+    bit<32> dist_c1;
+    bit<32> dist_c2;
+    bit<32> dist_c3;
+    bit<32> dist_c4;
+    bit<32> dist_c5;
 
-    bit<16> min_dist;
+    bit<32> min_dist;
     bit<1> delta_sign;
     bit<8> classification; // 1 to 5
 }
