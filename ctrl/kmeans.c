@@ -3,22 +3,18 @@
 #include "switch_config.h"
 #include "utils.h"
 #include <stdlib.h>
+#include <inttypes.h>
+
+#include "kmeans_model.h"
 
 typedef enum {
     ACTION_DROP = 0,
     ACTION_FORWARD = 1
 } action_type_t;
 
-#define NUM_FEATURES 5
-#define NUM_CLASSES 5
-static const int centers[NUM_CLASSES][NUM_FEATURES] = {
-    // example centers
-    {10, 20, 30, 40, 50},
-    {15, 25, 35, 45, 55},
-    {20, 30, 40, 50, 60},
-    {25, 35, 45, 55, 65},
-    {30, 40, 50, 60, 70}
-};
+#define NUM_FEATURES KM_NUM_FEATURES
+#define NUM_CLASSES KM_NUM_CLASSES
+#define centers km_centers
 
 typedef struct {
     char* feature_table_name;
@@ -194,27 +190,19 @@ void program_feature_table(bf_rt_session_hdl **session,
         P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, param_name, action_id, &d_ids[i]));
     }
     
-    P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
     for (uint64_t val = range_start; val <= range_end; val++) {
+        P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
         P4_CHECK(bf_rt_key_field_set_value(key, key_id, val));
 
-        // Set action data: compute and set distances to all centers
+        // Set action data once per entry, then fill all (d1..d5).
+        P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
         for (int c = 0; c < NUM_CLASSES; c++) {
-            uint64_t dist = (calc_dist_sq((int)val, centers[c][feature_idx]) > (uint64_t)INT32_MAX) ?
-                            INT32_MAX : calc_dist_sq((int)val, centers[c][feature_idx]);
-            // printf("Feature %d, Key %lu, Center %d, At %d: Distance Squared = %lu\n",
-            //        feature_idx, val, c, centers[c][feature_idx], dist);
-            // if (dist > (uint64_t)INT32_MAX) {
-            //     printf("Capping distance to INT32_MAX\n");
-            // }
-            P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
+            uint64_t raw = calc_dist_sq((int)val, centers[c][feature_idx]);
+            uint64_t dist = (raw > (uint64_t)INT32_MAX) ? (uint64_t)INT32_MAX : raw;
             P4_CHECK(bf_rt_data_field_set_value(data, d_ids[c], dist));
         }
 
         P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
-        
-        P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
-        P4_CHECK(bf_rt_table_data_reset(table_hdl, &data)); 
     }
     
     P4_CHECK(bf_rt_table_key_deallocate(key));
@@ -238,6 +226,7 @@ void program_forward_table(bf_rt_session_hdl **session,
                            bf_rt_table_hdl *table_hdl,
                            const char *key_field_name,
                            const char *action_name,
+                           uint64_t classification,
                            int egress_port) {
     bf_rt_table_key_hdl *key;
     bf_rt_table_data_hdl *data;
@@ -251,7 +240,7 @@ void program_forward_table(bf_rt_session_hdl **session,
     P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, "egress_port", action_id, &d_port));
 
     P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
-    P4_CHECK(bf_rt_key_field_set_value(key, key_id, egress_port));
+    P4_CHECK(bf_rt_key_field_set_value(key, key_id, classification));
     P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
     P4_CHECK(bf_rt_data_field_set_value(data, d_port, egress_port));
     P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
@@ -259,7 +248,8 @@ void program_forward_table(bf_rt_session_hdl **session,
     P4_CHECK(bf_rt_table_key_deallocate(key));
     P4_CHECK(bf_rt_table_data_deallocate(data));
     P4_CHECK(bf_rt_session_complete_operations(*session));
-    printf("Programmed forwarding entry for egress port %d\n", egress_port);
+    printf("Programmed forwarding entry: class=%" PRIu64 " -> egress_port=%d\n",
+           classification, egress_port);
 }
 
 int main()
@@ -305,14 +295,15 @@ int main()
                               feature_tables[f_idx].start, feature_tables[f_idx].end);
     }
 
-    // Map k-means class label (0..4) -> egress port.
-    static const int class_to_port[5] = {188, 132, 133, 134, 135};
+    // Map k-means class label (1..NUM_CLASSES) -> egress port.
+    static const int class_to_port[NUM_CLASSES] = {188, 188, 188, 188, 188};
     bf_rt_table_hdl *forward_table_hdl;
     P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_forward", &forward_table_hdl));
     for (int cls = 0; cls < NUM_CLASSES; cls++) {
         program_forward_table(session, dev_tgt, forward_table_hdl,
                               "ig_md.classification",
                               "SwitchIngress.ai_forward",
+                              (uint64_t)(cls + 1),
                               class_to_port[cls]);
     }
 

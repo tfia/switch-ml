@@ -20,11 +20,14 @@ ctrl-dt: ctrl/decision_tree.c ctrl/decision_tree_rules.h
 ctrl/decision_tree_rules.h: models/decision_tree.txt tools/generate_decision_tree.py
 	python3 tools/generate_decision_tree.py --input models/decision_tree.txt --output ctrl/decision_tree_rules.h
 
-ctrl-km: ctrl/kmeans.c
+ctrl-km: ctrl/kmeans.c ctrl/kmeans_model.h
 	gcc -I$$SDE_INSTALL/include -g -O2 -std=gnu11  -L/usr/local/lib -L$$SDE_INSTALL/lib \
 		$< $(SDE_INSTALL)/lib/libboost_system.so.1.67.0 -o kmeans \
 		-ldriver  -lbfutils  -lm -lpthread  -lboost_system\
 		-Wl,-rpath=$$SDE_INSTALL/lib
+
+ctrl/kmeans_model.h: models/kmeans.txt tools/generate_kmeans.py
+	python3 tools/generate_kmeans.py --input models/kmeans.txt --output ctrl/kmeans_model.h
 
 clean:
 	-rm -f contrl bf_drivers.log* zlog-cfg-cur decision_tree kmeans
