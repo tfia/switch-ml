@@ -208,6 +208,39 @@ void program_feature_table(bf_rt_session_hdl **session,
 }
 
 /**
+ * @brief Programs the min_dist update table.
+ *
+ * @param session       BFRT session handle.
+ * @param dev_tgt       Device target.
+ * @param table_hdl     Handle of the feature table to program.
+ * @param action_name   Name of the action to take (e.g., "SwitchIngress.ai_update_min_c2"). 
+ */
+void program_min_update_table(bf_rt_session_hdl **session,
+                                bf_rt_target_t *dev_tgt,
+                                bf_rt_table_hdl *table_hdl,
+                                const char *action_name
+                                ) {
+    bf_rt_table_key_hdl *key;
+    bf_rt_table_data_hdl *data;
+    bf_rt_id_t key_id, action_id;
+    P4_CHECK(bf_rt_table_key_allocate(table_hdl, &key));
+    P4_CHECK(bf_rt_table_data_allocate(table_hdl, &data));
+
+    P4_CHECK(bf_rt_key_field_id_get(table_hdl, "ig_md.delta_sign", &key_id));
+    P4_CHECK(bf_rt_action_name_to_id(table_hdl, action_name, &action_id));
+
+    P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
+    P4_CHECK(bf_rt_key_field_set_value(key, key_id, 1)); // delta_sign == 1
+    P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
+    P4_CHECK(bf_rt_table_entry_add(table_hdl, *session, dev_tgt, key, data));
+
+    P4_CHECK(bf_rt_table_key_deallocate(key));
+    P4_CHECK(bf_rt_table_data_deallocate(data));
+    P4_CHECK(bf_rt_session_complete_operations(*session));
+    printf("Programmed feature table for key '%s'\n", "ig_md.delta_sign");
+}
+
+/**
  * @brief Programs the forwarding table.
  *
  * @param session       BFRT session handle.
@@ -302,6 +335,15 @@ int main()
                               (uint64_t)(cls + 1),
                               class_to_port[cls]);
     }
+
+    bf_rt_table_hdl *min_update_table_hdl;
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_update_min_c2", &min_update_table_hdl));
+    program_min_update_table(session, dev_tgt, min_update_table_hdl,
+                             "SwitchIngress.ai_update_min_c2");
+
+    P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_update_min_c3", &min_update_table_hdl));
+    program_min_update_table(session, dev_tgt, min_update_table_hdl,
+                             "SwitchIngress.ai_update_min_c3");
 
     printf("All table entries are added successfully!\n");
     printf("Setup is completed successfully! Entering infinite loop...\n");

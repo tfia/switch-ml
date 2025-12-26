@@ -77,9 +77,6 @@ control SwitchIngress(
         key = { ig_md.delta_sign : exact; }
         actions = { ai_update_min_c2; NoAction; }
         size = 2;
-        const entries = {
-            (1w1) : ai_update_min_c2();
-        }
         default_action = NoAction;
     }
 
@@ -87,9 +84,6 @@ control SwitchIngress(
         key = { ig_md.delta_sign : exact; }
         actions = { ai_update_min_c3; NoAction; }
         size = 2;
-        const entries = {
-            (1w1) : ai_update_min_c3();
-        }
         default_action = NoAction;
     }
     // --- End of tables to update min_dist and classification ---

@@ -128,7 +128,7 @@ struct kmeans_metadata_t {
     bit<32> min_dist;
     bit<32> delta;
     bit<1> delta_sign;
-    bit<8> classification; // 1 to 5
+    bit<8> classification; // 1 to 3
 }
 
 struct egress_metadata_t{
