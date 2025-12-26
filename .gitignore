@@ -3,5 +3,6 @@ bf_drivers.log*
 control
 decision_tree
 ctrl/decision_tree_rules.h
+ctrl/kmeans_model.h
 kmeans
 zlog-cfg-cur

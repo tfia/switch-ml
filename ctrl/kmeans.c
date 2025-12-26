@@ -23,16 +23,12 @@ typedef struct {
 
 static const feature_table_t feature_tables[NUM_FEATURES] = {
     {"SwitchIngress.ti_f_frame_len", 0, 65535},
-    {"SwitchIngress.ti_f_eth_type", 0, 65535},
-    {"SwitchIngress.ti_f_ip_proto", 0, 255},
     {"SwitchIngress.ti_f_l4_src_port", 0, 65535},
     {"SwitchIngress.ti_f_l4_dst_port", 0, 65535}
 };
 
 const char *forward_key_names[NUM_FEATURES] = {
     "ig_md.f_frame_len",
-    "ig_md.f_eth_type",
-    "ig_md.f_ip_proto",
     "ig_md.f_l4_src_port",
     "ig_md.f_l4_dst_port",
 };
@@ -183,10 +179,10 @@ void program_feature_table(bf_rt_session_hdl **session,
     P4_CHECK(bf_rt_key_field_id_get(table_hdl, key_field_name, &key_id));
     P4_CHECK(bf_rt_action_name_to_id(table_hdl, action_name, &action_id));
 
-    bf_rt_id_t d_ids[NUM_CLASSES]; // Store d1, d2, ..., d5 field IDs
+    bf_rt_id_t d_ids[NUM_CLASSES]; // Store d1, d2, d3 field IDs
     char param_name[8];
     for (int i = 0; i < NUM_CLASSES; i++) {
-        sprintf(param_name, "d%d", i + 1); // d1, d2, ... d5
+        sprintf(param_name, "d%d", i + 1); // d1, d2, d3
         P4_CHECK(bf_rt_data_field_id_with_action_get(table_hdl, param_name, action_id, &d_ids[i]));
     }
     
@@ -194,7 +190,7 @@ void program_feature_table(bf_rt_session_hdl **session,
         P4_CHECK(bf_rt_table_key_reset(table_hdl, &key));
         P4_CHECK(bf_rt_key_field_set_value(key, key_id, val));
 
-        // Set action data once per entry, then fill all (d1..d5).
+        // Set action data once per entry, then fill all (d1..d3).
         P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
         for (int c = 0; c < NUM_CLASSES; c++) {
             uint64_t raw = calc_dist_sq((int)val, centers[c][feature_idx]);
@@ -296,7 +292,7 @@ int main()
     }
 
     // Map k-means class label (1..NUM_CLASSES) -> egress port.
-    static const int class_to_port[NUM_CLASSES] = {188, 188, 188, 188, 188};
+    static const int class_to_port[NUM_CLASSES] = {188, 132, 133};
     bf_rt_table_hdl *forward_table_hdl;
     P4_CHECK(bf_rt_table_from_name_get(bfrt_info, "SwitchIngress.ti_forward", &forward_table_hdl));
     for (int cls = 0; cls < NUM_CLASSES; cls++) {
