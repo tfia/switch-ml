@@ -205,6 +205,10 @@ control SwitchIngress(
         ig_md.delta_sign = delta17[32:32];
         ti_update_min_c5.apply();
         
+        if (hdr.ipv4.isValid()) {
+            hdr.ipv4.identification = ig_md.min_dist[15:0];
+        }
+        
         ti_forward.apply();
     }
 }
