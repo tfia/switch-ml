@@ -2,15 +2,12 @@
 """Generate a k-means model C header from models/kmeans.txt.
 
 Expected input lines:
-  centre point : ( 124,6,2048,47915,4046,);
+  centre point : ( 66,6352,49372,);
 
-The 5 values in the file are assumed to be ordered as:
-  (frame_len, ip_proto, ether_type, l4_src_port, l4_dst_port)
+The 3 values in the file are assumed to be ordered as:
+  (frame_len, l4_src_port, l4_dst_port)
 
-But the P4/control-plane feature order used by this repo is:
-  (frame_len, ether_type, ip_proto, l4_src_port, l4_dst_port)
-
-So we swap columns 1 and 2 when generating the C array.
+This order matches the P4/control-plane feature order.
 
 Output header defines:
   KM_NUM_FEATURES, KM_NUM_CLASSES, km_centers[][]
@@ -24,15 +21,14 @@ from pathlib import Path
 from typing import List
 
 
-KM_NUM_FEATURES = 5
-
+KM_NUM_FEATURES = 3
 
 def parse_centers(text: str) -> List[List[int]]:
     centers: List[List[int]] = []
-    # capture "( 1,2,3,4,5,)" allowing whitespace
+    # capture "( 1,2,3,)" allowing whitespace
     pat = re.compile(
         r"centre\s+point\s*:\s*\(\s*"  # prefix
-        r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*\)\s*;\s*",
+        r"(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*\)\s*;\s*",
         re.IGNORECASE,
     )
 
@@ -40,41 +36,25 @@ def parse_centers(text: str) -> List[List[int]]:
         m = pat.search(line)
         if not m:
             continue
-        vals = [int(m.group(i)) for i in range(1, 6)]
+        vals = [int(m.group(i)) for i in range(1, 4)]
         centers.append(vals)
 
     return centers
 
 
-def reorder_to_repo_feature_order(center_model_order: List[int]) -> List[int]:
-    # model: [frame_len, ip_proto, ether_type, src, dst]
-    # repo : [frame_len, ether_type, ip_proto, src, dst]
-    if len(center_model_order) != KM_NUM_FEATURES:
-        raise ValueError("center must have 5 values")
-    frame_len, ip_proto, ether_type, src, dst = center_model_order
-    return [frame_len, ether_type, ip_proto, src, dst]
-
-
-def generate_header(centers_model: List[List[int]]) -> str:
-    centers_repo = [reorder_to_repo_feature_order(c) for c in centers_model]
-
+def generate_header(centers: List[List[int]]) -> str:
     out: List[str] = []
     out.append("#pragma once\n")
     out.append("#include <stdint.h>\n\n")
     out.append(f"#define KM_NUM_FEATURES {KM_NUM_FEATURES}\n")
-    out.append(f"#define KM_NUM_CLASSES {len(centers_repo)}\n\n")
+    out.append(f"#define KM_NUM_CLASSES {len(centers)}\n\n")
     out.append("// Feature order in km_centers rows:\n")
     out.append("//   0: frame_len\n")
-    out.append("//   1: ether_type\n")
-    out.append("//   2: ip_proto\n")
-    out.append("//   3: l4_src_port\n")
-    out.append("//   4: l4_dst_port\n")
-    out.append("// Parsed from models/kmeans.txt which is assumed ordered as:\n")
-    out.append("//   (frame_len, ip_proto, ether_type,\n")
-    out.append("//    l4_src_port, l4_dst_port)\n\n")
+    out.append("//   1: l4_src_port\n")
+    out.append("//   2: l4_dst_port\n\n")
 
     out.append("static const int km_centers[KM_NUM_CLASSES][KM_NUM_FEATURES] = {\n")
-    for c in centers_repo:
+    for c in centers:
         out.append("    {" + ", ".join(str(x) for x in c) + "},\n")
     out.append("};\n")
 
@@ -84,7 +64,7 @@ def generate_header(centers_model: List[List[int]]) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default="models/kmeans.txt")
-    ap.add_argument("--output", default="ctrl/kmeans_model_generated.h")
+    ap.add_argument("--output", default="ctrl/kmeans_model.h")
     args = ap.parse_args()
 
     in_path = Path(args.input)
