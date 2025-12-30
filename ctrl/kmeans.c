@@ -194,7 +194,7 @@ void program_feature_table(bf_rt_session_hdl **session,
         P4_CHECK(bf_rt_table_action_data_reset(table_hdl, action_id, &data));
         for (int c = 0; c < NUM_CLASSES; c++) {
             uint64_t raw = calc_dist_sq((int)val, centers[c][feature_idx]);
-            uint64_t dist = (raw > (uint64_t)INT32_MAX) ? (uint64_t)INT32_MAX : raw;
+            uint64_t dist = (raw > (uint64_t)715827800) ? (uint64_t)715827800 : raw;
             P4_CHECK(bf_rt_data_field_set_value(data, d_ids[c], dist));
         }
 
