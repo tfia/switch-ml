@@ -1,0 +1,10 @@
+Drop : 0
+Forward to port 188: 188
+Forward to port 132: 132
+Forward to port 133: 133
+Forward to port 134: 134
+Forward to port 135: 135
+class 0: [188]
+class 1: [132]
+class 2: [133]
+

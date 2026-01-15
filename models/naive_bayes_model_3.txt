@@ -1,0 +1,12 @@
+class 0: 
+feature 0 (frame_len), average value: 211.14750982709168, standard error: 133009.92185668784;
+feature 1 (src_port), average value: 22872.981694245136, standard error: 546823250.5037397;
+feature 2 (dst_port), average value: 22436.538143042308, standard error: 546917166.1396415;
+class 1: 
+feature 0 (frame_len), average value: 382.4058304361169, standard error: 260538.0011255775;
+feature 1 (src_port), average value: 44937.943265831665, standard error: 145573563.64709243;
+feature 2 (dst_port), average value: 2085.786791471896, standard error: 61943730.8039504;
+class 2: 
+feature 0 (frame_len), average value: 220.52923733918516, standard error: 162801.7439351486;
+feature 1 (src_port), average value: 3518.9634708549684, standard error: 121715670.02330543;
+feature 2 (dst_port), average value: 36695.0332596294, standard error: 420719983.43701184;
